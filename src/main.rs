@@ -2,11 +2,13 @@ use std::fmt;
 use rand::thread_rng;
 use rand::seq::SliceRandom;
 
+#[derive(Debug)]
 enum Content {
     Mine,
     Empty
 }
 
+#[derive(Debug)]
 struct Cell {
     content: Content,
     neighbors: usize,
@@ -16,6 +18,16 @@ struct Cell {
 impl Cell {
     fn create_empty() -> Cell {
         Cell{content: Content::Empty, neighbors: 0, known: false}
+    }
+
+    fn is_null_cell(&self) -> bool {
+        if self.neighbors > 0{
+            return false
+        }
+        match self.content {
+            Content::Empty => true,
+            Content::Mine => false
+        }
     }
 
     fn to_str(&self) -> String {
@@ -96,11 +108,17 @@ impl Board {
         &mut self.field[point.0][point.1]
     }
 
-    fn neighbors(&self, point: &Point) -> Vec<Point>{
-        let indices: [i32; 3] = [-1, 0, 1];
-        indices.iter().zip(indices.iter())
-               .filter(|(&x, &y)| x !=0 || y != 0)
-               .map(|(&x, &y)| (x+(point.0 as i32), y+(point.1 as i32)))
+    fn neighbor_points(&self, point: &Point) -> Vec<Point>{
+        let mut product = Vec::with_capacity(8);
+        for i in -1..2{
+            for j in -1..2{
+                if i != 0 || j != 0 {
+                    product.push((i, j))
+                }
+            }
+        }
+        product.iter()
+               .map(|(x, y)| (x+(point.0 as i32), y+(point.1 as i32)))
                .filter(|(x, y)| *x >= 0 && *x < self.size.width as i32 && *y >= 0 && *y < self.size.height as i32)
                .map(|(x, y)| Point(x as usize, y as usize))
                .collect()
@@ -109,24 +127,39 @@ impl Board {
     fn initialize(&mut self, point: &Point){
         for point in sample_points(&self.size, self.mine_count, point){
             self.field[point.0][point.1].content = Content::Mine;
-            for neighbor in self.neighbors(&point){
+            for neighbor in self.neighbor_points(&point){
                 let mut cell =  self.retrieve_cell(&neighbor);
                 cell.neighbors += 1;
             }
         }
+        self.initialized = true;
     }
 
-    fn probe(&mut self, point: &Point) -> Option<&Cell>{
-        // this needs to return with a) what was there b) if progress was made
+    fn probe(&mut self, point: &Point){
         if !&self.initialized {
             self.initialize(point);
         }
-        let mut cell = self.retrieve_cell(point);
-        if cell.known {
-            return None
+        self.reveal_point(point);
+    }
+
+    fn reveal_point(&mut self, point: &Point){
+        let was_null = {
+            let mut cell = self.retrieve_cell(point);
+            if cell.known {
+                return 
+            }
+            cell.known = true;
+            cell.is_null_cell()
+        };
+        if was_null {
+            self.propagate_knowledge(point);
         }
-        cell.known = true;
-        Some(cell)
+    }
+
+    fn propagate_knowledge(&mut self, point: &Point) {
+        for neighbor in self.neighbor_points(point){
+            self.reveal_point(&neighbor);
+        }
     }
 
     fn to_string(&self) -> String {
@@ -151,10 +184,10 @@ fn sample_points(size: &BoardSize, n: usize, disallowed: &Point) -> Vec<Point>{
 
 fn main() {
     let size = BoardSize{
-        width:3,
-        height:3
+        width:9,
+        height:9
     };
-    let mut board = Board::new_from_size(size, 5);
+    let mut board = Board::new_from_size(size, 10);
     println!("{}", board);
     board.probe(&Point(0,1));
     println!("{}", board);
