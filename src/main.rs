@@ -1,6 +1,62 @@
 use std::fmt;
+use std::io;
+use regex::Regex;
 use rand::thread_rng;
 use rand::seq::SliceRandom;
+
+enum ActionType {
+    Click(Point),
+    Chord(Point),
+    Complete(Point),
+    Flag(Point)
+}
+
+impl ActionType {
+    fn from_string(input: &str) -> Option<ActionType>{
+        let re = Regex::new(r"(click|flag|chord|complete)\s(\d*)\s(\d*)").unwrap();
+        match re.captures_iter(input).next() {
+            None => None,
+            Some(cap) => {
+                let x: usize = cap[2].parse().expect("Expected a number");
+                let y: usize = cap[3].parse().expect("Expected a number");
+                let point = Point(x, y);
+                ActionType::extract_type_from_string(&cap[1], point)
+            }
+        }
+    }
+
+    fn extract_type_from_string(input: &str, point: Point) -> Option<ActionType>{
+        // there must be a better way
+        if input == "click"{
+            Some(ActionType::Click(point))
+        }
+        else if input == "chord"{
+            Some(ActionType::Chord(point))
+        }
+        else if input == "complete"{
+            Some(ActionType::Complete(point))
+        }
+        else if input == "flag"{
+            Some(ActionType::Flag(point))
+        }
+        else {
+            None
+        }
+    }
+}
+
+fn get_move() -> ActionType {
+    println!("Please input your move: TYPE X Y");
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).expect("Failed to read");
+    match ActionType::from_string(&input) {
+        Some(action) => action,
+        None => {
+            println!("Must be of the form: TYPE X Y");
+            get_move()
+        }
+    }
+}
 
 #[derive(Debug)]
 enum Content {
@@ -163,14 +219,24 @@ impl Board {
     }
 
     fn to_string(&self) -> String {
-        let mut result = "".to_owned();
-        for row in self.field.iter(){
+        let mut result = "  ".to_owned();
+        for i in 0..self.size.width{
+            result += &i.to_string()[..];
+        }
+        result += "\n";
+        for (i, row) in self.field.iter().enumerate() {
+            result += &i.to_string()[..];
+            result += " ";
             for cell in row{
                 result += &cell.to_str()[..];
             }
-            result += "\n"
+            result += "\n";
         }
         result
+    }
+
+    fn finished(&self) -> bool {
+        false
     }
 }
 
@@ -182,17 +248,23 @@ fn sample_points(size: &BoardSize, n: usize, disallowed: &Point) -> Vec<Point>{
                    .filter(|x| *x != *disallowed).take(n).collect()
 }
 
+fn game_loop(board: &mut Board){
+    while !board.finished(){
+        println!("{}", board);
+        match get_move() {
+            ActionType::Click(point) => {
+                board.probe(&point)
+            }
+            _ => ()
+        };
+    }
+}
+
 fn main() {
     let size = BoardSize{
         width:9,
         height:9
     };
     let mut board = Board::new_from_size(size, 10);
-    println!("{}", board);
-    board.probe(&Point(0,1));
-    println!("{}", board);
-    board.probe(&Point(0,2));
-    println!("{}", board);
-    board.probe(&Point(1,1));
-    println!("{}", board);
+    game_loop(&mut board);
 }
