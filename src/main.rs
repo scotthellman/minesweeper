@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fmt;
 use std::io;
 use regex::Regex;
@@ -13,7 +14,7 @@ enum ActionType {
 
 impl ActionType {
     fn from_string(input: &str) -> Option<ActionType>{
-        let re = Regex::new(r"(click|flag|chord|complete)\s(\d*)\s(\d*)").unwrap();
+        let re = Regex::new(r"(click|flag|chord|complete)\s(\d+)\s(\d+)").unwrap();
         match re.captures_iter(input).next() {
             None => None,
             Some(cap) => {
@@ -78,16 +79,6 @@ impl Cell {
         Cell{content: Content::Empty, neighbors: 0, known: false, flagged: false}
     }
 
-    fn is_null_cell(&self) -> bool {
-        if self.neighbors > 0{
-            return false
-        }
-        match self.content {
-            Content::Empty => true,
-            Content::Mine => false
-        }
-    }
-
     fn is_assumed_mine(&self) -> bool {
         match self.content {
             Content::Mine => {
@@ -149,7 +140,7 @@ impl BoardSize {
     }
 }
 
-#[derive(Debug, Eq)]
+#[derive(Debug, Eq, Clone, Hash)]
 struct Point(usize, usize);
 
 impl PartialEq for Point {
@@ -247,47 +238,66 @@ impl Board {
             .sum()
     }
 
-    fn chord(&mut self, point: &Point){
+    fn chord(&mut self, point: &Point) -> usize{
         let cell = self.retrieve_cell(point);
         if !cell.known{
-            return
+            return 0
         }
+        let mut hits = 0;
+        let assumed = self.count_assumed_mined_neighbors(point);
+        println!("while chording we saw {} vs {}", assumed, cell.neighbors);
         if self.count_assumed_mined_neighbors(point) == cell.neighbors {
             for neighbor in self.neighbor_points(point){
-                self.probe(&neighbor);
+                hits += self.probe(&neighbor);
             }
-            //self.neighbor_points(point).iter()
-            //    .map(|neighbor| self.probe(neighbor))
-            //    .collect();
         }
+        hits
     }
 
-    fn probe(&mut self, point: &Point){
+    fn probe(&mut self, point: &Point) -> usize{
         if !&self.initialized {
             self.initialize(point);
         }
 
-        self.reveal_point(point);
+        // overall a lot of this seems bad
+        let mut region = HashSet::with_capacity(16);
+        region.insert(point.clone());
+        self.find_region(point.clone(), &mut region);
+
+        region.iter()
+            .map(|point| match self.reveal_point(point).content{
+                    Content::Mine => {
+                        self.retrieve_cell(point).known as usize
+                    },
+                    Content::Empty => 0
+                })
+            .sum()
     }
 
-    fn reveal_point(&mut self, point: &Point){
-        let was_null = {
-            let mut cell = self.retrieve_cell_mutable(point);
-            if cell.known || cell.flagged {
-                return 
+    fn find_region(&self, point: Point, acc: &mut HashSet<Point>) {
+        let neighbors = self.neighbor_points(&point);
+        let cell = self.retrieve_cell(&point);
+        match cell.content {
+            Content::Empty => {
+                if !cell.known && cell.neighbors == 0 {
+                    for neighbor in neighbors{
+                        if !acc.contains(&neighbor){
+                            acc.insert(neighbor.clone());
+                            self.find_region(neighbor, acc);
+                        }
+                    }
+                }
             }
-            cell.known = true;
-            cell.is_null_cell()
+            _ => { }
         };
-        if was_null {
-            self.propagate_knowledge(point);
-        }
     }
 
-    fn propagate_knowledge(&mut self, point: &Point) {
-        for neighbor in self.neighbor_points(point){
-            self.reveal_point(&neighbor);
+    fn reveal_point(&mut self, point: &Point) -> &Cell{
+        let mut cell = self.retrieve_cell_mutable(point);
+        if !(cell.known || cell.flagged){
+            cell.known = true;
         }
+        cell
     }
 
     fn to_string(&self) -> String {
@@ -307,8 +317,14 @@ impl Board {
         result
     }
 
-    fn finished(&self) -> bool {
-        false
+    fn is_won(&self) -> bool {
+        // ideally this wouldn't be computed every single time
+        // for now winning means revealing every safe
+        let total = self.size.area() - self.mine_count;
+        let found = self.field.iter().flatten()
+            .filter(|cell| cell.is_known_unmined())
+            .count();
+        total == found
     }
 }
 
@@ -321,23 +337,34 @@ fn sample_points(size: &BoardSize, n: usize, disallowed: &Point) -> Vec<Point>{
 }
 
 fn game_loop(board: &mut Board){
-    while !board.finished(){
+    while !board.is_won(){
         println!("{}", board);
-        match get_move() {
+        let mines = match get_move() {
             ActionType::Click(point) => {
                 board.probe(&point)
             }
             ActionType::Flag(point) => {
-                board.toggle_flag(&point)
+                board.toggle_flag(&point);
+                0
             }
             ActionType::Complete(point) => {
-                board.flag_neighbors(&point)
+                board.flag_neighbors(&point);
+                0
             }
             ActionType::Chord(point) => {
                 board.chord(&point)
             }
-            _ => ()
         };
+        if mines > 0 {
+            break
+        }
+    }
+    println!("{}", board);
+    if board.is_won(){
+        println!("you win!");
+    }
+    else{
+        println!("you lose");
     }
 }
 
