@@ -68,12 +68,14 @@ enum Content {
 struct Cell {
     content: Content,
     neighbors: usize,
-    known: bool
+    known: bool,
+    flagged: bool
+
 }
 
 impl Cell {
     fn create_empty() -> Cell {
-        Cell{content: Content::Empty, neighbors: 0, known: false}
+        Cell{content: Content::Empty, neighbors: 0, known: false, flagged: false}
     }
 
     fn is_null_cell(&self) -> bool {
@@ -86,9 +88,33 @@ impl Cell {
         }
     }
 
+    fn is_assumed_mine(&self) -> bool {
+        match self.content {
+            Content::Mine => {
+                self.known || self.flagged
+            }
+            Content::Empty => {
+                self.flagged
+            }
+        }
+    }
+
+    fn is_known_unmined(&self) -> bool {
+        match self.content {
+            Content::Empty => {
+                self.known
+            }
+            _ => false
+
+        }
+    }
+
     fn to_str(&self) -> String {
+        if self.flagged{
+            return String::from("▶")
+        }
         if !self.known{
-            return String::from("■")
+            return String::from("□")
         }
         match self.content {
             Content::Mine => String::from("X"),
@@ -160,7 +186,11 @@ impl Board {
         Board {size, field, mine_count, initialized}
     }
 
-    fn retrieve_cell(&mut self, point: &Point) -> &mut Cell{
+    fn retrieve_cell(&self, point: &Point) -> &Cell{
+        &self.field[point.0][point.1]
+    }
+
+    fn retrieve_cell_mutable(&mut self, point: &Point) -> &mut Cell{
         &mut self.field[point.0][point.1]
     }
 
@@ -184,24 +214,66 @@ impl Board {
         for point in sample_points(&self.size, self.mine_count, point){
             self.field[point.0][point.1].content = Content::Mine;
             for neighbor in self.neighbor_points(&point){
-                let mut cell =  self.retrieve_cell(&neighbor);
+                let mut cell =  self.retrieve_cell_mutable(&neighbor);
                 cell.neighbors += 1;
             }
         }
         self.initialized = true;
     }
 
+    fn toggle_flag(&mut self, point: &Point){
+        let mut cell = self.retrieve_cell_mutable(point);
+        if !cell.known{  // flag and known gate each other, it's a bit weird
+            cell.flagged = !cell.flagged;
+        }
+    }
+
+    fn flag_neighbors(&mut self, point: &Point){
+        let cell = self.retrieve_cell(point);
+        let neighbors = self.neighbor_points(point);
+        let ungood_points: Vec<&Point> = neighbors.iter()
+            .filter(|neighbor| !self.retrieve_cell(neighbor).is_known_unmined())
+            .collect();
+        if ungood_points.len() == cell.neighbors{
+            for neighbor in ungood_points{
+                self.retrieve_cell_mutable(neighbor).flagged = true;
+            }
+        }
+    }
+
+    fn count_assumed_mined_neighbors(&self, point: &Point) -> usize{
+        self.neighbor_points(point).iter()
+            .map(|neighbor| self.retrieve_cell(neighbor).is_assumed_mine() as usize)
+            .sum()
+    }
+
+    fn chord(&mut self, point: &Point){
+        let cell = self.retrieve_cell(point);
+        if !cell.known{
+            return
+        }
+        if self.count_assumed_mined_neighbors(point) == cell.neighbors {
+            for neighbor in self.neighbor_points(point){
+                self.probe(&neighbor);
+            }
+            //self.neighbor_points(point).iter()
+            //    .map(|neighbor| self.probe(neighbor))
+            //    .collect();
+        }
+    }
+
     fn probe(&mut self, point: &Point){
         if !&self.initialized {
             self.initialize(point);
         }
+
         self.reveal_point(point);
     }
 
     fn reveal_point(&mut self, point: &Point){
         let was_null = {
-            let mut cell = self.retrieve_cell(point);
-            if cell.known {
+            let mut cell = self.retrieve_cell_mutable(point);
+            if cell.known || cell.flagged {
                 return 
             }
             cell.known = true;
@@ -255,6 +327,15 @@ fn game_loop(board: &mut Board){
             ActionType::Click(point) => {
                 board.probe(&point)
             }
+            ActionType::Flag(point) => {
+                board.toggle_flag(&point)
+            }
+            ActionType::Complete(point) => {
+                board.flag_neighbors(&point)
+            }
+            ActionType::Chord(point) => {
+                board.chord(&point)
+            }
             _ => ()
         };
     }
@@ -265,6 +346,6 @@ fn main() {
         width:9,
         height:9
     };
-    let mut board = Board::new_from_size(size, 10);
+    let mut board = Board::new_from_size(size, 5);
     game_loop(&mut board);
 }
