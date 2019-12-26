@@ -4,17 +4,17 @@ use std::collections::HashSet;
 use std::fmt;
 
 #[derive(Debug)]
-enum Content {
+pub enum Content {
     Mine,
     Empty
 }
 
 #[derive(Debug)]
-struct Cell {
-    content: Content,
-    neighbors: usize,
-    known: bool,
-    flagged: bool
+pub struct Cell {
+    pub content: Content,
+    pub neighbors: usize,
+    pub known: bool,
+    pub flagged: bool
 
 }
 
@@ -80,11 +80,15 @@ pub struct BoardSize {
 }
 
 impl BoardSize {
-    fn area(&self) -> usize {
+    pub fn area(&self) -> usize {
         return self.width * self.height;
     }
 
-    fn point_from_integer(&self, x: usize) -> Option<Point> {
+    pub fn points(&self) -> Vec<Point> {
+        (0..self.area()-1).filter_map(|x| self.point_from_integer(x)).collect()
+    }
+
+    pub fn point_from_integer(&self, x: usize) -> Option<Point> {
         //nominally induces an ordering, might be useful...
         if x >= self.area() {
             return None
@@ -101,10 +105,11 @@ fn sample_points(size: &BoardSize, n: usize, disallowed: &Point) -> Vec<Point>{
                    .filter(|x| *x != *disallowed).take(n).collect()
 }
 pub struct Board {
-    size: BoardSize,
+    pub size: BoardSize,
     field: Vec<Vec<Cell>>,
-    mine_count: usize,
-    initialized: bool
+    pub mine_count: usize,
+    pub initialized: bool,
+    iterator_state: usize
 }
 
 impl fmt::Display for Board {
@@ -121,6 +126,7 @@ impl Board {
 
     pub fn new_from_size(size: BoardSize, mine_count: usize) -> Board {
         let initialized = false;
+        let iterator_state = 0;
         let mut field = Vec::with_capacity(size.height);
         for _ in 0..size.height {
             let mut row_vec = Vec::with_capacity(size.width);
@@ -130,10 +136,10 @@ impl Board {
             field.push(row_vec);
         }
 
-        Board {size, field, mine_count, initialized}
+        Board {size, field, mine_count, initialized, iterator_state}
     }
 
-    fn retrieve_cell(&self, point: &Point) -> &Cell{
+    pub fn retrieve_cell(&self, point: &Point) -> &Cell{
         &self.field[point.0][point.1]
     }
 
@@ -141,7 +147,13 @@ impl Board {
         &mut self.field[point.0][point.1]
     }
 
-    fn neighbor_points(&self, point: &Point) -> Vec<Point>{
+    pub fn unknown_count(&self) -> usize{
+        self.size.points().iter().map(|point| self.retrieve_cell(&point))
+            .filter(|cell| !cell.known)
+            .count()
+    }
+
+    pub fn neighbor_points(&self, point: &Point) -> Vec<Point>{
         let mut product = Vec::with_capacity(8);
         for i in -1..2{
             for j in -1..2{
@@ -194,14 +206,23 @@ impl Board {
             .sum()
     }
 
+    pub fn count_known_neighbors(&self, point: &Point) -> usize {
+        self.neighbor_points(point).iter()
+            .map(|point| self.retrieve_cell(point))
+            .filter(|neighbor| neighbor.known)
+            .count()
+    }
+
+    pub fn count_unknown_neighbors(&self, point: &Point) -> usize {
+        8 - self.count_known_neighbors(point)
+    }
+
     pub fn chord(&mut self, point: &Point) -> usize{
         let cell = self.retrieve_cell(point);
         if !cell.known{
             return 0
         }
         let mut hits = 0;
-        let assumed = self.count_assumed_mined_neighbors(point);
-        println!("while chording we saw {} vs {}", assumed, cell.neighbors);
         if self.count_assumed_mined_neighbors(point) == cell.neighbors {
             for neighbor in self.neighbor_points(point){
                 hits += self.probe(&neighbor);
