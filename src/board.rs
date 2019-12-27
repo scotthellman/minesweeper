@@ -109,7 +109,6 @@ pub struct Board {
     field: Vec<Vec<Cell>>,
     pub mine_count: usize,
     pub initialized: bool,
-    iterator_state: usize
 }
 
 impl fmt::Display for Board {
@@ -126,7 +125,6 @@ impl Board {
 
     pub fn new_from_size(size: BoardSize, mine_count: usize) -> Board {
         let initialized = false;
-        let iterator_state = 0;
         let mut field = Vec::with_capacity(size.height);
         for _ in 0..size.height {
             let mut row_vec = Vec::with_capacity(size.width);
@@ -136,7 +134,7 @@ impl Board {
             field.push(row_vec);
         }
 
-        Board {size, field, mine_count, initialized, iterator_state}
+        Board {size, field, mine_count, initialized}
     }
 
     pub fn retrieve_cell(&self, point: &Point) -> &Cell{

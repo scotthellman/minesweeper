@@ -1,15 +1,26 @@
 pub mod board;
 pub mod ai;
-mod interaction;
+pub mod interaction;
 use std::thread;
 use std::time;
 
-use interaction::ActionType;
+use board::Point;
 
-pub fn game_loop(board: &mut board::Board){
+pub enum ActionType {
+    Click(Point),
+    Chord(Point),
+    Complete(Point),
+    Flag(Point)
+}
+
+pub trait Agent {
+    fn generate_move(&mut self, board: &board::Board) -> ActionType;
+}
+
+pub fn game_loop(agent: &mut impl Agent, board: &mut board::Board){
     while !board.is_won(){
         println!("{}", board);
-        let mines = match interaction::get_move() {
+        let mines = match agent.generate_move(board) {
             ActionType::Click(point) => {
                 board.probe(&point)
             }
@@ -27,45 +38,6 @@ pub fn game_loop(board: &mut board::Board){
         };
         if mines > 0 {
             break
-        }
-    }
-    println!("{}", board);
-    if board.is_won(){
-        println!("you win!");
-    }
-    else{
-        println!("you lose");
-    }
-}
-
-// TODO: generalize this so AI and normal are the same main loop
-pub fn ai_game_loop(board: &mut board::Board){
-    while !board.is_won(){
-        println!("{}", board);
-        let ten_millis = time::Duration::from_millis(1000);
-        thread::sleep(ten_millis);
-        let moves = ai::generate_move(board);
-        let mut mines = 0;
-        for action in moves {
-            mines = match action {
-                    ActionType::Click(point) => {
-                        board.probe(&point)
-                    }
-                    ActionType::Flag(point) => {
-                        board.toggle_flag(&point);
-                        0
-                    }
-                    ActionType::Complete(point) => {
-                        board.flag_neighbors(&point);
-                        0
-                    }
-                    ActionType::Chord(point) => {
-                        board.chord(&point)
-                    }
-                };
-            }
-        if mines > 0{
-            break;
         }
     }
     println!("{}", board);
