@@ -42,11 +42,12 @@ pub fn game_loop(board: &mut board::Board){
 pub fn ai_game_loop(board: &mut board::Board){
     while !board.is_won(){
         println!("{}", board);
-        let ten_millis = time::Duration::from_millis(500);
+        let ten_millis = time::Duration::from_millis(1000);
         thread::sleep(ten_millis);
         let moves = ai::generate_move(board);
+        let mut mines = 0;
         for action in moves {
-            match action {
+            mines = match action {
                     ActionType::Click(point) => {
                         board.probe(&point)
                     }
@@ -63,6 +64,9 @@ pub fn ai_game_loop(board: &mut board::Board){
                     }
                 };
             }
+        if mines > 0{
+            break;
+        }
     }
     println!("{}", board);
     if board.is_won(){

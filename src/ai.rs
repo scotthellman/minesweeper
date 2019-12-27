@@ -32,6 +32,7 @@ fn known_safe_flags(board: &Board) -> Vec<Point> {
          .filter(|point| !board.retrieve_cell(point).flagged)
          .filter(|point| !board.retrieve_cell(point).known)
          .map(|point| (point.clone(), get_naive_mine_probability(board, &point, true)))
+         .inspect(|(p, v)| println!("{:?} -> {}", p, v))
          .filter(|(_, proba)| *proba == 1.0)
          .map(|(point, _)| point.clone())
          .collect()
@@ -42,7 +43,7 @@ fn known_safe_clicks(board: &Board) -> Vec<Point> {
          .filter(|point| !board.retrieve_cell(point).flagged)
          .filter(|point| !board.retrieve_cell(point).known)
          .map(|point| (point.clone(), get_naive_mine_probability(board, &point, false)))
-         .filter(|(_, proba)| *proba == 1.0)
+         .filter(|(_, proba)| *proba == 0.0)
          .map(|(point, _)| point.clone())
          .collect()
 }
@@ -83,7 +84,7 @@ fn get_naive_mine_probability(board: &Board, point: &Point, pessimistic: bool) -
     let probability = board.neighbor_points(point).iter()
          .map(|point| (point, board.retrieve_cell(point)))
          .filter(|(_, neighbor)| neighbor.known)
-         .map(|(point, neighbor)| (neighbor.neighbors as f32)/(board.count_unknown_neighbors(point) as f32))
+         .map(|(point, neighbor)| ((neighbor.neighbors - board.count_assumed_mined_neighbors(point)) as f32)/(board.count_unknown_neighbors(point) as f32))
          .fold(None, |acc, proba| {
              match acc {
                  None => Some(proba),
@@ -107,7 +108,7 @@ fn get_naive_mine_probability(board: &Board, point: &Point, pessimistic: bool) -
     println!("probability was {:?}", probability);
     match probability {
         Some(p) => p,
-        None => (board.unknown_count() as f32) / (board.size.area() as f32)
+        None => (board.mine_count as f32) / (board.size.area() as f32)
     }
 }
 

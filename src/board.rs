@@ -85,7 +85,7 @@ impl BoardSize {
     }
 
     pub fn points(&self) -> Vec<Point> {
-        (0..self.area()-1).filter_map(|x| self.point_from_integer(x)).collect()
+        (0..self.area()).filter_map(|x| self.point_from_integer(x)).collect()
     }
 
     pub fn point_from_integer(&self, x: usize) -> Option<Point> {
@@ -200,7 +200,7 @@ impl Board {
         }
     }
 
-    fn count_assumed_mined_neighbors(&self, point: &Point) -> usize{
+    pub fn count_assumed_mined_neighbors(&self, point: &Point) -> usize{
         self.neighbor_points(point).iter()
             .map(|neighbor| self.retrieve_cell(neighbor).is_assumed_mine() as usize)
             .sum()
@@ -214,7 +214,7 @@ impl Board {
     }
 
     pub fn count_unknown_neighbors(&self, point: &Point) -> usize {
-        8 - self.count_known_neighbors(point)
+        self.neighbor_points(point).len() - self.count_known_neighbors(point)
     }
 
     pub fn chord(&mut self, point: &Point) -> usize{
