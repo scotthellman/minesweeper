@@ -7,16 +7,13 @@ use super::interaction::ActionType;
 pub fn generate_move(board: &Board) -> Vec<ActionType>{
     let safe_flags = known_safe_flags(board);
     if safe_flags.len() > 0{
-        println!("found some flags");
         return safe_flags.iter().map(|point| ActionType::Flag(point.clone())).collect()
     }
 
     let safe_clicks = known_safe_clicks(board);
     if safe_clicks.len() > 0{
-        println!("found some clicks");
         return safe_clicks.iter().map(|point| ActionType::Click(point.clone())).collect()
     }
-    println!("no obvious play");
     let probabilities = get_naive_mine_probabilities(board);
     match safest_click(probabilities){
         None => vec![],
@@ -32,7 +29,6 @@ fn known_safe_flags(board: &Board) -> Vec<Point> {
          .filter(|point| !board.retrieve_cell(point).flagged)
          .filter(|point| !board.retrieve_cell(point).known)
          .map(|point| (point.clone(), get_naive_mine_probability(board, &point, true)))
-         .inspect(|(p, v)| println!("{:?} -> {}", p, v))
          .filter(|(_, proba)| *proba == 1.0)
          .map(|(point, _)| point.clone())
          .collect()
@@ -84,7 +80,12 @@ fn get_naive_mine_probability(board: &Board, point: &Point, pessimistic: bool) -
     let probability = board.neighbor_points(point).iter()
          .map(|point| (point, board.retrieve_cell(point)))
          .filter(|(_, neighbor)| neighbor.known)
-         .map(|(point, neighbor)| ((neighbor.neighbors - board.count_assumed_mined_neighbors(point)) as f32)/(board.count_unknown_neighbors(point) as f32))
+         .map(|(point, neighbor)| {
+             let flagged = board.count_flagged_neighbors(point);
+             let mined = board.count_assumed_mined_neighbors(point);
+             let unknown = board.count_unknown_neighbors(point);
+             (neighbor.neighbors - mined) as f32/(unknown - flagged) as f32
+         })
          .fold(None, |acc, proba| {
              match acc {
                  None => Some(proba),
@@ -105,7 +106,6 @@ fn get_naive_mine_probability(board: &Board, point: &Point, pessimistic: bool) -
                  }
              }
          });
-    println!("probability was {:?}", probability);
     match probability {
         Some(p) => p,
         None => (board.mine_count as f32) / (board.size.area() as f32)

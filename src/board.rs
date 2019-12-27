@@ -213,6 +213,13 @@ impl Board {
             .count()
     }
 
+    pub fn count_flagged_neighbors(&self, point: &Point) -> usize {
+        self.neighbor_points(point).iter()
+            .map(|point| self.retrieve_cell(point))
+            .filter(|neighbor| neighbor.flagged)
+            .count()
+    }
+
     pub fn count_unknown_neighbors(&self, point: &Point) -> usize {
         self.neighbor_points(point).len() - self.count_known_neighbors(point)
     }
