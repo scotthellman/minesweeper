@@ -67,6 +67,13 @@ impl Cell {
 #[derive(Debug, Eq, Clone, Hash)]
 pub struct Point(pub usize, pub usize);
 
+impl Point {
+    pub fn distance(&self, other: &Point) -> usize{
+        //l-inf norm seems most appropriate for minesweeper
+        (self.0 as i64 - other.0 as i64).abs().max((self.1 as i64 - other.1 as i64).abs()) as usize
+    }
+}
+
 
 impl PartialEq for Point {
     fn eq(&self, other: &Self) -> bool {
@@ -97,12 +104,12 @@ impl BoardSize {
     }
 }
 
-fn sample_points(size: &BoardSize, n: usize, disallowed: &Point) -> Vec<Point>{
+fn sample_points(size: &BoardSize, n: usize, disallowed: &Point, disallowed_radius: usize) -> Vec<Point>{
     // TODO: handle n > area
     let mut possible: Vec<usize> = (0..size.area()).collect();
     possible.shuffle(&mut thread_rng());
     possible.iter().map(|&x| size.point_from_integer(x).expect("bad size!"))
-                   .filter(|x| *x != *disallowed).take(n).collect()
+                   .filter(|x| disallowed.distance(x) > disallowed_radius).take(n).collect()
 }
 pub struct Board {
     pub size: BoardSize,
@@ -176,7 +183,7 @@ impl Board {
     }
 
     fn initialize(&mut self, point: &Point){
-        for point in sample_points(&self.size, self.mine_count, point){
+        for point in sample_points(&self.size, self.mine_count, point, 3){ //FIXME: hardcoding the radius
             self.field[point.0][point.1].content = Content::Mine;
             for neighbor in self.neighbor_points(&point){
                 let mut cell =  self.retrieve_cell_mutable(&neighbor);
