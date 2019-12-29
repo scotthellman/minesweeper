@@ -3,17 +3,29 @@ use super::board::Point;
 use super::board::Content;
 use super::ActionType;
 use super::Agent;
+use std::thread;
+use std::time;
 
 pub struct NaiveAI {
-    move_queue: Vec<ActionType>
+    move_queue: Vec<ActionType>,
+    move_delay: u64
 }
 
 impl Agent for NaiveAI {
     fn generate_move(&mut self, board: &Board) -> ActionType {
+        let move_delay = time::Duration::from_millis(self.move_delay);
+        let start = time::Instant::now();
+
         match self.move_queue.pop(){
             Some(action) => action,
             None => {
                 self.move_queue = NaiveAI::generate_next_moves(board);
+                let now = time::Instant::now();
+                let elapsed = now - start;
+                println!("generated move in {:?}", elapsed);
+                if move_delay > elapsed{
+                    thread::sleep(move_delay - elapsed);
+                }
                 self.move_queue.pop().expect("something weird happened and we have no moves")
             }
         }
@@ -22,9 +34,10 @@ impl Agent for NaiveAI {
 
 impl NaiveAI {
 
-    pub fn new() -> NaiveAI{
-        let move_queue = Vec::with_capacity(4);
-        NaiveAI{move_queue}
+    pub fn new(move_delay: u64) -> NaiveAI{
+        let mut move_queue = Vec::with_capacity(4);
+        move_queue.push(ActionType::Click(Point(0, 0)));
+        NaiveAI{move_queue, move_delay}
     }
 
     pub fn generate_next_moves(board: &Board) -> Vec<ActionType>{
@@ -38,7 +51,8 @@ impl NaiveAI {
             return safe_clicks.iter().map(|point| ActionType::Click(point.clone())).collect()
         }
         let probabilities = NaiveAI::get_naive_mine_probabilities(board);
-        match NaiveAI::safest_click(probabilities){
+        //match NaiveAI::safest_click(probabilities){
+        match NaiveAI::safest_frontier_click(board, probabilities){
             None => vec![],
             Some((point, proba)) => {
                 println!("Naively estimating probability at {}", proba);
@@ -65,6 +79,29 @@ impl NaiveAI {
              .filter(|(_, proba)| *proba == 0.0)
              .map(|(point, _)| point.clone())
              .collect()
+    }
+
+    fn safest_frontier_click(board: &Board, point_probabilities: Vec<(Point, f32)>) -> Option<(Point, f32)>{
+        point_probabilities.iter()
+            .filter(|(point, proba)| board.has_known_neighbors(point))
+            .filter(|(_, proba)| *proba > 0.0 && *proba < 1.0 )
+            .fold(None, |acc, (point, proba)| { //FIXME: painfully similar to the code in naive_mine_probability
+                match acc {
+                    None => Some((point.clone(), *proba)),
+                    Some(acc) => {
+                        let acc_proba = acc.1;
+                        let result = {
+                            if *proba == 0.0 {
+                                (point.clone(), *proba)
+                            } else {
+                                if *proba < acc_proba {(point.clone(), *proba)} else {acc} //TODO: why do i need all these derefs
+                                // oh i think it's iter vs into_iter
+                            }
+                        };
+                        Some(result)
+                    }
+                }
+            })
     }
 
     fn safest_click(point_probabilities: Vec<(Point, f32)>) -> Option<(Point, f32)>{

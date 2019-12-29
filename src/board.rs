@@ -151,6 +151,14 @@ impl Board {
             .count()
     }
 
+    // TODO: i really need to break some of this logic out into Cell
+    pub fn has_known_neighbors(&self, point: &Point) -> bool{
+        self.neighbor_points(point).iter()
+            .map(|point| self.retrieve_cell(point))
+            .filter(|cell| cell.known)
+            .count() > 0
+    }
+
     pub fn neighbor_points(&self, point: &Point) -> Vec<Point>{
         let mut product = Vec::with_capacity(8);
         for i in -1..2{

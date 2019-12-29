@@ -1,8 +1,6 @@
 pub mod board;
 pub mod ai;
 pub mod interaction;
-use std::thread;
-use std::time;
 
 use board::Point;
 
