@@ -10,55 +10,84 @@ pub enum Content {
 }
 
 #[derive(Debug)]
+pub enum KnowledgeState {
+    Unknown,
+    Flag,
+    Known
+}
+
+impl KnowledgeState {
+    pub fn is_known(&self) -> bool{
+        match *self {
+            KnowledgeState::Known => true,
+            _ => false
+        }
+    }
+
+    pub fn is_flag(&self) -> bool{
+        match *self {
+            KnowledgeState::Flag => true,
+            _ => false
+        }
+    }
+
+    pub fn is_unknown(&self) -> bool{
+        match *self {
+            KnowledgeState::Unknown => true,
+            _ => false
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Cell {
     pub content: Content,
-    pub neighbors: usize,
-    pub known: bool,
-    pub flagged: bool
-
+    pub mined_neighbor_count: usize,
+    pub knowledge: KnowledgeState,
+    pub point: Point
 }
 
 impl Cell {
-    fn create_empty() -> Cell {
-        Cell{content: Content::Empty, neighbors: 0, known: false, flagged: false}
+    fn create_empty(point: Point) -> Cell {
+        Cell{content: Content::Empty, mined_neighbor_count: 0, knowledge: KnowledgeState::Unknown, point}
+    }
+
+    pub fn toggle_flag(&mut self){
+        let new_state = match self.knowledge {
+            KnowledgeState::Known => KnowledgeState::Known,
+            KnowledgeState::Flag => KnowledgeState::Unknown,
+            KnowledgeState::Unknown => KnowledgeState::Flag
+        }; 
+        self.knowledge = new_state;
     }
 
     fn is_assumed_mine(&self) -> bool {
-        match self.content {
-            Content::Mine => {
-                self.known || self.flagged
-            }
-            Content::Empty => {
-                self.flagged
-            }
+        match (&self.knowledge, &self.content) {
+            (KnowledgeState::Unknown, _) => false,
+            (KnowledgeState::Flag, _) => true,
+            (KnowledgeState::Known, Content::Mine) => true,
+            _ => false
         }
     }
 
     fn is_known_unmined(&self) -> bool {
-        match self.content {
-            Content::Empty => {
-                self.known
-            }
+        match (&self.knowledge, &self.content) {
+            (KnowledgeState::Known, Content::Empty) => true,
             _ => false
-
         }
     }
 
     fn to_str(&self) -> String {
-        if self.flagged{
-            return String::from("▶")
-        }
-        if !self.known{
-            return String::from("□")
-        }
-        match self.content {
-            Content::Mine => String::from("X"),
-            Content::Empty => {
-                if self.neighbors == 0{
+        match (&self.knowledge, &self.content) {
+            (KnowledgeState::Flag, _) => String::from("▶"),
+            (KnowledgeState::Unknown, _) => String::from("□"),
+            (_, Content::Mine) => String::from("X"),
+            (_, Content::Empty) => {
+                if self.mined_neighbor_count == 0{
                     String::from("_")
                 }
                 else{
-                    self.neighbors.to_string()
+                    self.mined_neighbor_count.to_string()
                 }
             }
         }
@@ -96,7 +125,6 @@ impl BoardSize {
     }
 
     pub fn point_from_integer(&self, x: usize) -> Option<Point> {
-        //nominally induces an ordering, might be useful...
         if x >= self.area() {
             return None
         }
@@ -133,10 +161,10 @@ impl Board {
     pub fn new_from_size(size: BoardSize, mine_count: usize) -> Board {
         let initialized = false;
         let mut field = Vec::with_capacity(size.height);
-        for _ in 0..size.height {
+        for i in 0..size.height {
             let mut row_vec = Vec::with_capacity(size.width);
-            for _ in 0..size.width {
-                row_vec.push(Cell::create_empty());
+            for j in 0..size.width {
+                row_vec.push(Cell::create_empty(Point(i, j)));
             }
             field.push(row_vec);
         }
@@ -152,17 +180,21 @@ impl Board {
         &mut self.field[point.0][point.1]
     }
 
+    // TODO: Ideally this is an iterator
+    fn cells(&self) -> Vec<&Cell> {
+        self.size.points().iter().map(|point| self.retrieve_cell(point)).collect()
+    }
+
     pub fn unknown_count(&self) -> usize{
-        self.size.points().iter().map(|point| self.retrieve_cell(&point))
-            .filter(|cell| !cell.known)
+        self.cells().iter()
+            .filter(|cell| !cell.knowledge.is_known())
             .count()
     }
 
-    // TODO: i really need to break some of this logic out into Cell
     pub fn has_known_neighbors(&self, point: &Point) -> bool{
         self.neighbor_points(point).iter()
             .map(|point| self.retrieve_cell(point))
-            .filter(|cell| cell.known)
+            .filter(|cell| cell.knowledge.is_known())
             .count() > 0
     }
 
@@ -182,33 +214,34 @@ impl Board {
                .collect()
     }
 
+    pub fn neighbor_cells(&self, cell: &Cell) -> Vec<&Cell>{
+        self.neighbor_points(&cell.point).iter().map(|point| self.retrieve_cell(point)).collect()
+    }
+
     fn initialize(&mut self, point: &Point){
         for point in sample_points(&self.size, self.mine_count, point, 3){ //FIXME: hardcoding the radius
             self.field[point.0][point.1].content = Content::Mine;
             for neighbor in self.neighbor_points(&point){
                 let mut cell =  self.retrieve_cell_mutable(&neighbor);
-                cell.neighbors += 1;
+                cell.mined_neighbor_count += 1;
             }
         }
         self.initialized = true;
     }
 
     pub fn toggle_flag(&mut self, point: &Point){
-        let mut cell = self.retrieve_cell_mutable(point);
-        if !cell.known{  // flag and known gate each other, it's a bit weird
-            cell.flagged = !cell.flagged;
-        }
+        self.retrieve_cell_mutable(point).toggle_flag()
     }
 
     pub fn flag_neighbors(&mut self, point: &Point){
         let cell = self.retrieve_cell(point);
         let neighbors = self.neighbor_points(point);
         let ungood_points: Vec<&Point> = neighbors.iter()
-            .filter(|neighbor| !self.retrieve_cell(neighbor).is_known_unmined())
+            .filter(|point| !self.retrieve_cell(point).is_known_unmined())
             .collect();
-        if ungood_points.len() == cell.neighbors{
+        if ungood_points.len() == cell.mined_neighbor_count{
             for neighbor in ungood_points{
-                self.retrieve_cell_mutable(neighbor).flagged = true;
+                self.retrieve_cell_mutable(neighbor).knowledge = KnowledgeState::Flag;
             }
         }
     }
@@ -222,14 +255,14 @@ impl Board {
     pub fn count_known_neighbors(&self, point: &Point) -> usize {
         self.neighbor_points(point).iter()
             .map(|point| self.retrieve_cell(point))
-            .filter(|neighbor| neighbor.known)
+            .filter(|neighbor| neighbor.knowledge.is_known())
             .count()
     }
 
     pub fn count_flagged_neighbors(&self, point: &Point) -> usize {
         self.neighbor_points(point).iter()
             .map(|point| self.retrieve_cell(point))
-            .filter(|neighbor| neighbor.flagged)
+            .filter(|neighbor| neighbor.knowledge.is_flag())
             .count()
     }
 
@@ -239,11 +272,11 @@ impl Board {
 
     pub fn chord(&mut self, point: &Point) -> usize{
         let cell = self.retrieve_cell(point);
-        if !cell.known{
+        if !cell.knowledge.is_known(){
             return 0
         }
         let mut hits = 0;
-        if self.count_assumed_mined_neighbors(point) == cell.neighbors {
+        if self.count_assumed_mined_neighbors(point) == cell.mined_neighbor_count {
             for neighbor in self.neighbor_points(point){
                 hits += self.probe(&neighbor);
             }
@@ -264,7 +297,7 @@ impl Board {
         region.iter()
             .map(|point| match self.reveal_point(point).content{
                     Content::Mine => {
-                        self.retrieve_cell(point).known as usize
+                        self.retrieve_cell(point).knowledge.is_known() as usize
                     },
                     Content::Empty => 0
                 })
@@ -276,7 +309,7 @@ impl Board {
         let cell = self.retrieve_cell(&point);
         match cell.content {
             Content::Empty => {
-                if !cell.known && cell.neighbors == 0 {
+                if !cell.knowledge.is_known() && cell.mined_neighbor_count == 0 {
                     for neighbor in neighbors{
                         if !acc.contains(&neighbor){
                             acc.insert(neighbor.clone());
@@ -291,8 +324,8 @@ impl Board {
 
     fn reveal_point(&mut self, point: &Point) -> &Cell{
         let mut cell = self.retrieve_cell_mutable(point);
-        if !(cell.known || cell.flagged){
-            cell.known = true;
+        if cell.knowledge.is_unknown(){
+            cell.knowledge = KnowledgeState::Known;
         }
         cell
     }

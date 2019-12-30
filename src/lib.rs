@@ -4,6 +4,8 @@ pub mod interaction;
 
 use board::Point;
 
+
+#[derive(Debug)]
 pub enum ActionType {
     Click(Point),
     Chord(Point),

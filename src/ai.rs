@@ -1,4 +1,5 @@
 use super::board::Board;
+use super::board::KnowledgeState;
 use super::board::Point;
 use super::board::Content;
 use super::ActionType;
@@ -63,8 +64,10 @@ impl NaiveAI {
 
     fn known_safe_flags(board: &Board) -> Vec<Point> {
         board.size.points().iter()
-             .filter(|point| !board.retrieve_cell(point).flagged)
-             .filter(|point| !board.retrieve_cell(point).known)
+             .filter(|point| match board.retrieve_cell(point).knowledge{
+                 KnowledgeState::Unknown => true,
+                 _ => false
+             })
              .map(|point| (point.clone(), NaiveAI::get_naive_mine_probability(board, &point, true)))
              .filter(|(_, proba)| *proba == 1.0)
              .map(|(point, _)| point.clone())
@@ -73,8 +76,7 @@ impl NaiveAI {
 
     fn known_safe_clicks(board: &Board) -> Vec<Point> {
         board.size.points().iter()
-             .filter(|point| !board.retrieve_cell(point).flagged)
-             .filter(|point| !board.retrieve_cell(point).known)
+             .filter(|point| board.retrieve_cell(point).knowledge.is_unknown())
              .map(|point| (point.clone(), NaiveAI::get_naive_mine_probability(board, &point, false)))
              .filter(|(_, proba)| *proba == 0.0)
              .map(|(point, _)| point.clone())
@@ -83,7 +85,7 @@ impl NaiveAI {
 
     fn safest_frontier_click(board: &Board, point_probabilities: Vec<(Point, f32)>) -> Option<(Point, f32)>{
         point_probabilities.iter()
-            .filter(|(point, proba)| board.has_known_neighbors(point))
+            .filter(|(point, _)| board.has_known_neighbors(point))
             .filter(|(_, proba)| *proba > 0.0 && *proba < 1.0 )
             .fold(None, |acc, (point, proba)| { //FIXME: painfully similar to the code in naive_mine_probability
                 match acc {
@@ -128,23 +130,23 @@ impl NaiveAI {
 
     fn get_naive_mine_probability(board: &Board, point: &Point, pessimistic: bool) -> f32 {
         let cell = board.retrieve_cell(point);
-        if cell.known{
+        if cell.knowledge.is_known() {
             return match cell.content {
                 Content::Mine => 1.0,
                 Content::Empty => 0.0
             }
         }
-        if cell.flagged {
+        if cell.knowledge.is_flag() {
             return 1.0
         }
         let probability = board.neighbor_points(point).iter()
              .map(|point| (point, board.retrieve_cell(point)))
-             .filter(|(_, neighbor)| neighbor.known)
+             .filter(|(_, neighbor)| neighbor.knowledge.is_known())
              .map(|(point, neighbor)| {
                  let flagged = board.count_flagged_neighbors(point);
                  let mined = board.count_assumed_mined_neighbors(point);
                  let unknown = board.count_unknown_neighbors(point);
-                 (neighbor.neighbors - mined) as f32/(unknown - flagged) as f32
+                 (neighbor.mined_neighbor_count - mined) as f32/(unknown - flagged) as f32
              })
              .fold(None, |acc, proba| {
                  match acc {
