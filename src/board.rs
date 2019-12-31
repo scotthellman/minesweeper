@@ -191,13 +191,6 @@ impl Board {
             .count()
     }
 
-    pub fn has_known_neighbors(&self, point: &Point) -> bool{
-        self.neighbor_points(point).iter()
-            .map(|point| self.retrieve_cell(point))
-            .filter(|cell| cell.knowledge.is_known())
-            .count() > 0
-    }
-
     pub fn neighbor_points(&self, point: &Point) -> Vec<Point>{
         let mut product = Vec::with_capacity(8);
         for i in -1..2{
@@ -214,8 +207,12 @@ impl Board {
                .collect()
     }
 
+    pub fn neighbor_cells_from_point(&self, point: &Point) -> Vec<&Cell>{
+        self.neighbor_points(point).iter().map(|point| self.retrieve_cell(point)).collect()
+    }
+
     pub fn neighbor_cells(&self, cell: &Cell) -> Vec<&Cell>{
-        self.neighbor_points(&cell.point).iter().map(|point| self.retrieve_cell(point)).collect()
+        self.neighbor_cells_from_point(&cell.point)
     }
 
     fn initialize(&mut self, point: &Point){
@@ -246,22 +243,26 @@ impl Board {
         }
     }
 
+    pub fn has_known_neighbors(&self, point: &Point) -> bool{
+        self.neighbor_cells_from_point(point).iter()
+            .filter(|cell| cell.knowledge.is_known())
+            .count() > 0
+    }
+
     pub fn count_assumed_mined_neighbors(&self, point: &Point) -> usize{
-        self.neighbor_points(point).iter()
-            .map(|neighbor| self.retrieve_cell(neighbor).is_assumed_mine() as usize)
-            .sum()
+        self.neighbor_cells_from_point(point).iter()
+            .filter(|neighbor| neighbor.is_assumed_mine())
+            .count()
     }
 
     pub fn count_known_neighbors(&self, point: &Point) -> usize {
-        self.neighbor_points(point).iter()
-            .map(|point| self.retrieve_cell(point))
+        self.neighbor_cells_from_point(point).iter()
             .filter(|neighbor| neighbor.knowledge.is_known())
             .count()
     }
 
     pub fn count_flagged_neighbors(&self, point: &Point) -> usize {
-        self.neighbor_points(point).iter()
-            .map(|point| self.retrieve_cell(point))
+        self.neighbor_cells_from_point(point).iter()
             .filter(|neighbor| neighbor.knowledge.is_flag())
             .count()
     }

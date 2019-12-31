@@ -52,7 +52,6 @@ impl NaiveAI {
             return safe_clicks.iter().map(|point| ActionType::Click(point.clone())).collect()
         }
         let probabilities = NaiveAI::get_naive_mine_probabilities(board);
-        //match NaiveAI::safest_click(probabilities){
         match NaiveAI::safest_frontier_click(board, probabilities){
             None => vec![],
             Some((point, proba)) => {
@@ -107,19 +106,18 @@ impl NaiveAI {
     }
 
     fn safest_click(point_probabilities: Vec<(Point, f32)>) -> Option<(Point, f32)>{
-        point_probabilities.iter()
+        point_probabilities.into_iter()
             .filter(|(_, proba)| *proba > 0.0 && *proba < 1.0 )
             .fold(None, |acc, (point, proba)| { //FIXME: painfully similar to the code in naive_mine_probability
                 match acc {
-                    None => Some((point.clone(), *proba)),
+                    None => Some((point.clone(), proba)),
                     Some(acc) => {
                         let acc_proba = acc.1;
                         let result = {
-                            if *proba == 0.0 {
-                                (point.clone(), *proba)
+                            if proba == 0.0 {
+                                (point.clone(), proba)
                             } else {
-                                if *proba < acc_proba {(point.clone(), *proba)} else {acc} //TODO: why do i need all these derefs
-                                // oh i think it's iter vs into_iter
+                                if proba < acc_proba {(point.clone(), proba)} else {acc}
                             }
                         };
                         Some(result)
@@ -139,13 +137,12 @@ impl NaiveAI {
         if cell.knowledge.is_flag() {
             return 1.0
         }
-        let probability = board.neighbor_points(point).iter()
-             .map(|point| (point, board.retrieve_cell(point)))
-             .filter(|(_, neighbor)| neighbor.knowledge.is_known())
-             .map(|(point, neighbor)| {
-                 let flagged = board.count_flagged_neighbors(point);
-                 let mined = board.count_assumed_mined_neighbors(point);
-                 let unknown = board.count_unknown_neighbors(point);
+        let probability = board.neighbor_cells_from_point(point).iter()
+             .filter(|neighbor| neighbor.knowledge.is_known())
+             .map(|neighbor| {
+                 let flagged = board.count_flagged_neighbors(&neighbor.point);
+                 let mined = board.count_assumed_mined_neighbors(&neighbor.point);
+                 let unknown = board.count_unknown_neighbors(&neighbor.point);
                  (neighbor.mined_neighbor_count - mined) as f32/(unknown - flagged) as f32
              })
              .fold(None, |acc, proba| {
