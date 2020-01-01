@@ -191,6 +191,16 @@ impl Board {
             .count()
     }
 
+    pub fn found_mines(&self) -> usize{
+        self.field.iter().flatten()
+            .filter(|cell| cell.is_known_unmined())
+            .count()
+    }
+
+    pub fn remaining_mines(&self) -> usize{
+        self.mine_count - self.found_mines()
+    }
+
     pub fn neighbor_points(&self, point: &Point) -> Vec<Point>{
         let mut product = Vec::with_capacity(8);
         for i in -1..2{
@@ -241,6 +251,12 @@ impl Board {
                 self.retrieve_cell_mutable(neighbor).knowledge = KnowledgeState::Flag;
             }
         }
+    }
+
+    pub fn has_unknown_neighbors(&self, point: &Point) -> bool{
+        self.neighbor_cells_from_point(point).iter()
+            .filter(|cell| !cell.knowledge.is_known())
+            .count() > 0
     }
 
     pub fn has_known_neighbors(&self, point: &Point) -> bool{
@@ -352,9 +368,7 @@ impl Board {
         // ideally this wouldn't be computed every single time
         // for now winning means revealing every safe
         let total = self.size.area() - self.mine_count;
-        let found = self.field.iter().flatten()
-            .filter(|cell| cell.is_known_unmined())
-            .count();
+        let found = self.found_mines();
         total == found
     }
 }

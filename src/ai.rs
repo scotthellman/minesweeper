@@ -1,3 +1,5 @@
+use rand::thread_rng;
+use rand::seq::SliceRandom;
 use super::board::Board;
 use super::board::KnowledgeState;
 use super::board::Point;
@@ -6,6 +8,146 @@ use super::ActionType;
 use super::Agent;
 use std::thread;
 use std::time;
+use std::collections::HashSet;
+use std::collections::HashMap;
+
+pub struct Constraint{
+    missing_mines: usize,
+    missing_empties: usize,
+    constrained_points: HashSet<Point>
+}
+
+impl Constraint {
+    fn decrement(&mut self, is_mine: bool){
+        match is_mine {
+            false => self.missing_empties -= 1,
+            true => self.missing_mines -= 1
+        }
+    }
+
+    fn increment(&mut self, is_mine: bool){
+        match is_mine {
+            false => self.missing_empties += 1,
+            true => self.missing_mines += 1
+        }
+    }
+}
+
+pub struct ConstraintFrontier{
+    points: Vec<Point>,
+    possible_mines: usize,
+    current_mines: usize,
+    constraints: Vec<Constraint>
+}
+
+impl ConstraintFrontier{
+    fn from_board(board: &Board) -> ConstraintFrontier{
+        //identify frontier
+        //build constraints
+        let points: Vec<Point> = board.size.points().iter()
+            .map(|point| board.retrieve_cell(point))
+            .filter(|cell| !cell.knowledge.is_known() && board.has_known_neighbors(&cell.point))
+            .map(|cell| cell.point.clone()) //TODO: not entirely sure why i'm not just using copy?
+            .collect();
+
+        let border_points: Vec<Point> = board.size.points().iter()
+            .map(|point| board.retrieve_cell(point))
+            .filter(|cell| cell.knowledge.is_known() && board.has_unknown_neighbors(&cell.point))
+            .map(|cell| cell.point.clone()) //TODO: not entirely sure why i'm not just using copy?
+            .collect();
+
+        let possible_mines = board.remaining_mines();
+        let constraints = ConstraintFrontier::build_constraints(board, &border_points);
+        let current_mines = 0;
+        ConstraintFrontier{points, possible_mines, current_mines, constraints}
+    }
+
+    fn build_constraints(board: &Board, points: &Vec<Point>) -> Vec<Constraint>{
+        //each known border point imposes a constraint
+        points.iter()
+            .map(|point| {
+                let cell = board.retrieve_cell(point);
+                let unknown_neighbors: Vec<Point> = board.neighbor_cells_from_point(point).iter()
+                    .filter(|cell| cell.knowledge.is_unknown())
+                    .map(|cell| cell.point.clone())
+                    .collect();
+                let total_unknown = unknown_neighbors.len();
+                let known_mines = board.count_assumed_mined_neighbors(point);
+                let missing_mines = cell.mined_neighbor_count - known_mines;
+                let missing_empties = total_unknown - missing_mines;
+                let constrained_points: HashSet<Point> = unknown_neighbors.iter().map(|p| p.clone()).collect();
+                Constraint{missing_mines, missing_empties, constrained_points}
+            }).collect()
+    }
+
+    fn shuffled_frontier_points(&self) -> Vec<Point>{
+        let mut frontier: Vec<Point> = self.points.iter().map(|p| p.clone()).collect();
+        frontier.shuffle(&mut thread_rng());
+        frontier
+    }
+
+    fn backtracking_search(&mut self, available_points: &[Point]) -> Option<Vec<Point>>{
+        //a very naive backtracking implementation
+        if self.possible_mines < self.current_mines {
+            return None
+        }
+        match available_points.first(){
+            None => Some(Vec::with_capacity(16)),
+            Some(point) => {
+                let possible = self.satisfying_assignments(&point);
+                if possible.len() == 0 {
+                    return None
+                }
+                for state in possible {
+                    self.update_point(point, state);
+                    match self.backtracking_search(&available_points[1..]){
+                        None => self.undo_update(point, state),
+                        Some(mut children) => {
+                            if state{
+                                children.push(point.clone());
+                            }
+                            return Some(children)
+                        }
+                    }
+                }
+                return None
+            }
+        }
+    }
+
+    fn satisfying_assignments(&self, point: &Point) -> Vec<bool> {
+        let (can_be_mine, can_be_empty) = self.constraints.iter()
+            //.filter(|constraint| constraint.missing_mines == 0 || constraint.missing_empties == 0)
+            .filter(|constraint| constraint.constrained_points.contains(point))
+            .fold((true, true), |acc, constraint| {
+                ((acc.0 || constraint.missing_mines == 0), (acc.1 || constraint.missing_empties == 0))
+            });
+        let mut result = Vec::with_capacity(2);
+        if can_be_mine {result.push(true)};
+        if can_be_empty {result.push(false)};
+        result
+    }
+
+    fn update_point(&mut self, point: &Point, mine: bool){
+        // TODO: why did i decide to use bools instead of an enum
+        // satisfying assignment should happen here. i'm just assuming it was called for now
+        for i in 0..self.constraints.len(){
+            if self.constraints[i].constrained_points.contains(point){
+                self.constraints[i].decrement(mine);
+            }
+        }
+        if mine {self.current_mines -= 1};
+    }
+
+    fn undo_update(&mut self, point: &Point, mine: bool){
+        for i in 0..self.constraints.len(){
+            if self.constraints[i].constrained_points.contains(point){
+                self.constraints[i].increment(mine);
+            }
+        }
+        if mine {self.current_mines += 1};
+    }
+}
 
 pub struct NaiveAI {
     move_queue: Vec<ActionType>,
@@ -51,7 +193,8 @@ impl NaiveAI {
         if safe_clicks.len() > 0{
             return safe_clicks.iter().map(|point| ActionType::Click(point.clone())).collect()
         }
-        let probabilities = NaiveAI::get_naive_mine_probabilities(board);
+        //let probabilities = NaiveAI::get_naive_mine_probabilities(board);
+        let probabilities = NaiveAI::get_monte_carlo_probabilities(board);
         match NaiveAI::safest_frontier_click(board, probabilities){
             None => vec![],
             Some((point, proba)) => {
@@ -174,6 +317,34 @@ impl NaiveAI {
     fn get_naive_mine_probabilities(board: &Board) -> Vec<(Point, f32)>{
         board.size.points().iter()
             .map(|point| (point.clone(), NaiveAI::get_naive_mine_probability(board, &point,false)))
+            .collect()
+    }
+
+    fn get_monte_carlo_probabilities(board: &Board) -> Vec<(Point, f32)>{
+        // TODO: ok so this isn't really naive anymore is it
+        let mut counts: HashMap<Point, usize> = HashMap::new();
+        let rollouts = 10;
+        let mut border_points: Vec<Point> = Vec::with_capacity(0);
+        for i in 0..rollouts{
+            println!("on {} rollout", i);
+            let mut frontier = ConstraintFrontier::from_board(board);
+            let points = frontier.shuffled_frontier_points();
+            border_points = points.iter().map(|p| p.clone()).collect();
+            let mined = frontier.backtracking_search(&points).expect("got a none back");
+            for mine in mined{
+                if counts.contains_key(&mine){
+                    *counts.get_mut(&mine).unwrap() += 1;
+                }
+                else{
+                    counts.insert(mine, 1);
+                }
+            }
+        }
+        border_points.into_iter()
+            .map(|point| {
+                let count = counts.get(&point).expect("somehow we don't have a count here");
+                (point, (*count as f32)/(rollouts as f32))
+            })
             .collect()
     }
 }
