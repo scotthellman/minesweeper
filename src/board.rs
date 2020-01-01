@@ -1,6 +1,7 @@
 use rand::thread_rng;
 use rand::seq::SliceRandom;
 use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fmt;
 
 #[derive(Debug)]
@@ -171,6 +172,7 @@ impl Board {
 
         Board {size, field, mine_count, initialized}
     }
+
 
     pub fn retrieve_cell(&self, point: &Point) -> &Cell{
         &self.field[point.0][point.1]
@@ -348,6 +350,13 @@ impl Board {
     }
 
     fn to_string(&self) -> String {
+        self.to_string_with_probabilities(&vec![])
+    }
+
+    pub fn to_string_with_probabilities(&self, probabilities: &Vec<(Point, f32)>) -> String {
+        let proba_lookup: HashMap<Point, f32> = probabilities.iter()
+            .map(|(p, f)| (*p, *f))
+            .collect();
         let mut result = "  ".to_owned();
         for i in 0..self.size.width{
             result += &i.to_string()[..];
@@ -357,7 +366,11 @@ impl Board {
             result += &i.to_string()[..];
             result += " ";
             for cell in row{
-                result += &cell.to_str()[..];
+                let c = match proba_lookup.get(&cell.point){
+                    None => cell.to_str(),
+                    Some(p) => proba_to_char(p)
+                };
+                result += &c[..];
             }
             result += "\n";
         }
@@ -370,5 +383,23 @@ impl Board {
         let total = self.size.area() - self.mine_count;
         let found = self.found_mines();
         total == found
+    }
+}
+
+fn proba_to_char(proba: &f32) -> String{
+    if *proba == 0.0 {
+        String::from("◌")
+    } else if *proba < 0.2 {
+        String::from("-")
+    } else if *proba < 0.4 {
+        String::from("=")
+    } else if *proba < 0.6 {
+        String::from("▤")
+    } else if *proba < 0.8 {
+        String::from("▦")
+    } else if *proba < 1.0 {
+        String::from("▩")
+    } else{
+        String::from("●")
     }
 }

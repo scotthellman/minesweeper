@@ -199,7 +199,8 @@ impl NaiveAI {
         }
         //let probabilities = NaiveAI::get_naive_mine_probabilities(board);
         let probabilities = NaiveAI::get_monte_carlo_probabilities(board);
-        println!("probs are {:?}", probabilities);
+        println!("probs are");
+        println!("{}", board.to_string_with_probabilities(&probabilities));
         let mut actions: Vec<ActionType> = Vec::with_capacity(1);
         let mut highest_proba = 0.0;
         let mut best_point: Option<Point> = None;
@@ -348,10 +349,9 @@ impl NaiveAI {
     fn get_monte_carlo_probabilities(board: &Board) -> Vec<(Point, f32)>{
         // TODO: ok so this isn't really naive anymore is it
         let mut counts: HashMap<Point, usize> = HashMap::new();
-        let rollouts = 10;
+        let rollouts = 20;
         let mut border_points: Vec<Point> = Vec::with_capacity(0);
         for i in 0..rollouts{
-            println!("on {} rollout", i);
             let mut frontier = ConstraintFrontier::from_board(board);
             let points = frontier.shuffled_frontier_points();
             border_points = points.iter().map(|p| p.clone()).collect();
