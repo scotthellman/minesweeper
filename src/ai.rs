@@ -10,6 +10,7 @@ use std::thread;
 use std::time;
 use std::collections::HashSet;
 use std::collections::HashMap;
+use itertools::Itertools;
 
 #[derive(Debug)]
 pub struct Constraint{
@@ -46,15 +47,15 @@ impl ConstraintFrontier{
         //build constraints
         let points: Vec<Point> = board.size.points().iter()
             .map(|point| board.retrieve_cell(point))
-            .filter(|cell| !cell.knowledge.is_known() && board.has_known_neighbors(&cell.point))
+            .filter(|cell| cell.knowledge.is_unknown() && board.has_known_neighbors(&cell.point))
             .map(|cell| cell.point.clone()) //TODO: not entirely sure why i'm not just using copy?
             .collect();
 
-        let border_points: Vec<Point> = board.size.points().iter()
-            .map(|point| board.retrieve_cell(point))
-            .filter(|cell| cell.knowledge.is_known() && board.has_unknown_neighbors(&cell.point))
-            .map(|cell| cell.point.clone()) //TODO: not entirely sure why i'm not just using copy?
-            .collect();
+        let border_points: Vec<Point> = points.iter()
+            .flat_map(|point| board.neighbor_cells_from_point(point))
+            .filter(|cell| cell.is_known_unmined())
+            .map(|cell| cell.point)
+            .dedup().collect();
 
         let remaining = board.remaining_mines();
         let missing_mines = {
@@ -79,7 +80,6 @@ impl ConstraintFrontier{
                 let missing_mines = cell.mined_neighbor_count - known_mines;
                 let missing_empties = total_unknown - missing_mines;
                 let constrained_points: HashSet<Point> = unknown_neighbors.iter().map(|p| p.clone()).collect();
-                println!("For {:?} we think there are {} mines and {} empties", point, missing_mines, missing_empties);
                 Constraint{missing_mines, missing_empties, constrained_points}
             }).collect()
     }

@@ -70,7 +70,7 @@ impl Cell {
         }
     }
 
-    fn is_known_unmined(&self) -> bool {
+    pub fn is_known_unmined(&self) -> bool {
         match (&self.knowledge, &self.content) {
             (KnowledgeState::Known, Content::Empty) => true,
             _ => false
