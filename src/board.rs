@@ -93,7 +93,7 @@ impl Cell {
         }
     }
 }
-#[derive(Debug, Eq, Clone, Hash)]
+#[derive(Debug, Eq, Clone, Hash, Copy)]
 pub struct Point(pub usize, pub usize);
 
 impl Point {
@@ -193,12 +193,12 @@ impl Board {
 
     pub fn found_mines(&self) -> usize{
         self.field.iter().flatten()
-            .filter(|cell| cell.is_known_unmined())
+            .filter(|cell| cell.is_assumed_mine())
             .count()
     }
 
-    pub fn remaining_mines(&self) -> usize{
-        self.mine_count - self.found_mines()
+    pub fn remaining_mines(&self) -> i32{
+        self.mine_count as i32 - self.found_mines() as i32
     }
 
     pub fn neighbor_points(&self, point: &Point) -> Vec<Point>{
@@ -226,7 +226,7 @@ impl Board {
     }
 
     fn initialize(&mut self, point: &Point){
-        for point in sample_points(&self.size, self.mine_count, point, 3){ //FIXME: hardcoding the radius
+        for point in sample_points(&self.size, self.mine_count, point, 2){ //FIXME: hardcoding the radius
             self.field[point.0][point.1].content = Content::Mine;
             for neighbor in self.neighbor_points(&point){
                 let mut cell =  self.retrieve_cell_mutable(&neighbor);

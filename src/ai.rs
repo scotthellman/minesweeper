@@ -11,6 +11,7 @@ use std::time;
 use std::collections::HashSet;
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub struct Constraint{
     missing_mines: usize,
     missing_empties: usize,
@@ -35,8 +36,7 @@ impl Constraint {
 
 pub struct ConstraintFrontier{
     points: Vec<Point>,
-    possible_mines: usize,
-    current_mines: usize,
+    missing_mines: usize,
     constraints: Vec<Constraint>
 }
 
@@ -56,10 +56,13 @@ impl ConstraintFrontier{
             .map(|cell| cell.point.clone()) //TODO: not entirely sure why i'm not just using copy?
             .collect();
 
-        let possible_mines = board.remaining_mines();
+        let remaining = board.remaining_mines();
+        let missing_mines = {
+            if remaining >= 0 {remaining as usize}
+            else {0}
+        };
         let constraints = ConstraintFrontier::build_constraints(board, &border_points);
-        let current_mines = 0;
-        ConstraintFrontier{points, possible_mines, current_mines, constraints}
+        ConstraintFrontier{points, missing_mines, constraints}
     }
 
     fn build_constraints(board: &Board, points: &Vec<Point>) -> Vec<Constraint>{
@@ -76,6 +79,7 @@ impl ConstraintFrontier{
                 let missing_mines = cell.mined_neighbor_count - known_mines;
                 let missing_empties = total_unknown - missing_mines;
                 let constrained_points: HashSet<Point> = unknown_neighbors.iter().map(|p| p.clone()).collect();
+                println!("For {:?} we think there are {} mines and {} empties", point, missing_mines, missing_empties);
                 Constraint{missing_mines, missing_empties, constrained_points}
             }).collect()
     }
@@ -88,7 +92,7 @@ impl ConstraintFrontier{
 
     fn backtracking_search(&mut self, available_points: &[Point]) -> Option<Vec<Point>>{
         //a very naive backtracking implementation
-        if self.possible_mines < self.current_mines {
+        if self.missing_mines == 0{
             return None
         }
         match available_points.first(){
@@ -120,7 +124,7 @@ impl ConstraintFrontier{
             //.filter(|constraint| constraint.missing_mines == 0 || constraint.missing_empties == 0)
             .filter(|constraint| constraint.constrained_points.contains(point))
             .fold((true, true), |acc, constraint| {
-                ((acc.0 || constraint.missing_mines == 0), (acc.1 || constraint.missing_empties == 0))
+                ((acc.0 && constraint.missing_mines > 0), (acc.1 && constraint.missing_empties > 0))
             });
         let mut result = Vec::with_capacity(2);
         if can_be_mine {result.push(true)};
@@ -136,7 +140,7 @@ impl ConstraintFrontier{
                 self.constraints[i].decrement(mine);
             }
         }
-        if mine {self.current_mines -= 1};
+        if mine {self.missing_mines -= 1};
     }
 
     fn undo_update(&mut self, point: &Point, mine: bool){
@@ -145,7 +149,7 @@ impl ConstraintFrontier{
                 self.constraints[i].increment(mine);
             }
         }
-        if mine {self.current_mines += 1};
+        if mine {self.missing_mines += 1};
     }
 }
 
@@ -195,13 +199,34 @@ impl NaiveAI {
         }
         //let probabilities = NaiveAI::get_naive_mine_probabilities(board);
         let probabilities = NaiveAI::get_monte_carlo_probabilities(board);
-        match NaiveAI::safest_frontier_click(board, probabilities){
+        println!("probs are {:?}", probabilities);
+        let mut actions: Vec<ActionType> = Vec::with_capacity(1);
+        let mut highest_proba = 0.0;
+        let mut best_point: Option<Point> = None;
+        for (point, proba) in probabilities{
+            if proba > highest_proba {
+                highest_proba = proba;
+                best_point = Some(point);
+            }
+            if proba == 0.0{
+                actions.push(ActionType::Click(point));
+            }
+            if proba == 1.0{
+                actions.push(ActionType::Flag(point));
+            }
+        }
+        if actions.len() == 0{
+            actions.push(ActionType::Flag(best_point.expect("so we just didn't have anything or something?")))
+        }
+        actions
+        /*match NaiveAI::safest_frontier_click(board, probabilities){
             None => vec![],
             Some((point, proba)) => {
                 println!("Naively estimating probability at {}", proba);
                 vec![ActionType::Click(point)]
             }
         }
+        */
     }
 
     fn known_safe_flags(board: &Board) -> Vec<Point> {
@@ -342,7 +367,7 @@ impl NaiveAI {
         }
         border_points.into_iter()
             .map(|point| {
-                let count = counts.get(&point).expect("somehow we don't have a count here");
+                let count = counts.get(&point).unwrap_or(&0);
                 (point, (*count as f32)/(rollouts as f32))
             })
             .collect()
