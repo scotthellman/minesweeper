@@ -10,7 +10,7 @@ pub enum Content {
     Empty
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum KnowledgeState {
     Unknown,
     Flag,
@@ -401,5 +401,29 @@ fn proba_to_char(proba: &f32) -> String{
         String::from("▩")
     } else{
         String::from("●")
+    }
+}
+
+#[cfg(test)]
+mod cell_tests {
+    use super::*;
+
+    fn knowledge_states() -> [KnowledgeState; 3]{
+        [KnowledgeState::Unknown, KnowledgeState::Flag, KnowledgeState::Known]
+    }
+
+    #[test]
+    fn toggle_flag_correctness() {
+        for start_state in knowledge_states().iter() {
+            let mut cell = Cell::create_empty(Point(0, 0));
+            cell.knowledge = start_state.clone();
+            cell.toggle_flag();
+            match (start_state, cell.knowledge){
+                (KnowledgeState::Known, KnowledgeState::Known) => {},
+                (KnowledgeState::Flag, KnowledgeState::Unknown) => {},
+                (KnowledgeState::Unknown, KnowledgeState::Flag) => {},
+                _ => panic!("got an unexpected toggle state")
+            };
+        }
     }
 }

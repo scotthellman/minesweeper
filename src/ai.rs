@@ -355,6 +355,7 @@ impl NaiveAI {
             let mut frontier = ConstraintFrontier::from_board(board);
             let points = frontier.shuffled_frontier_points();
             border_points = points.iter().map(|p| p.clone()).collect();
+            // FIXME: i do actually hit this expect sometimes
             let mined = frontier.backtracking_search(&points).expect("got a none back");
             for mine in mined{
                 if counts.contains_key(&mine){
