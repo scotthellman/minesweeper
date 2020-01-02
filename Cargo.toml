@@ -10,3 +10,6 @@ edition = "2018"
 rand = "0.7.2"
 regex = "1"
 itertools = "0.8.2"
+
+[dev-dependencies]
+proptest = "0.6.0"

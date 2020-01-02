@@ -3,8 +3,9 @@ use rand::seq::SliceRandom;
 use std::collections::HashSet;
 use std::collections::HashMap;
 use std::fmt;
+use itertools::Itertools;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Content {
     Mine,
     Empty
@@ -118,7 +119,7 @@ pub struct BoardSize {
 
 impl BoardSize {
     pub fn area(&self) -> usize {
-        return self.width * self.height;
+        self.width * self.height
     }
 
     pub fn points(&self) -> Vec<Point> {
@@ -405,6 +406,9 @@ fn proba_to_char(proba: &f32) -> String{
 }
 
 #[cfg(test)]
+use proptest::prelude::*;
+
+#[cfg(test)]
 mod cell_tests {
     use super::*;
 
@@ -424,6 +428,49 @@ mod cell_tests {
                 (KnowledgeState::Unknown, KnowledgeState::Flag) => {},
                 _ => panic!("got an unexpected toggle state")
             };
+        }
+    }
+}
+
+#[cfg(test)]
+mod boardsize_tests {
+    use super::*;
+    fn point_fits_on_board(point: &Point, board: &BoardSize) -> bool {
+        point.0 >= 0 && point.0 < board.height && point.1 >= 0 && point.1 < board.width
+    }
+
+
+    proptest! {
+        #[test]
+        fn area_correctness(width in 0..1000usize, height in 0..1000usize) {
+            prop_assert_eq!(BoardSize{width, height}.area(), width * height);
+
+        }
+
+        #[test]
+        fn point_from_integer_correctness(x in any::<usize>(), width in 0..1000usize, height in 0..1000usize) {
+            let board = BoardSize{width, height};
+            match board.point_from_integer(x) {
+                None => prop_assert!(x >= width * height),
+                Some(point) => {
+                    prop_assert!(point.0 == x/width && point.0 < height);
+                    prop_assert!(point.1 == x%width && point.1 < height);
+                }
+            }
+        }
+
+        #[test]
+        fn test_points(width in 0..100usize, height in 0..100usize) {
+            let board = BoardSize{width, height};
+            let points = board.points();
+            let points_count = points.len();
+            // points should have length area() and every pair should appear once
+            prop_assert_eq!(points_count, board.area());
+            for point in points.iter() {
+                prop_assert!(point_fits_on_board(point, &board));
+            }
+            let unique_count = points.into_iter().dedup().count();
+            prop_assert_eq!(unique_count, points_count);
         }
     }
 }
