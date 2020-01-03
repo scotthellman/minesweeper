@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 xs 1253945281 4107749573 3882750905 4198940531 # shrinks to width = 23, height = 0
+xs 1123370013 4075369686 3251741564 1200579004 # shrinks to x1 = 9223372036854775808, y1 = 0, x2 = 0, y2 = 0

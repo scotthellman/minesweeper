@@ -134,13 +134,18 @@ impl BoardSize {
     }
 }
 
-fn sample_points(size: &BoardSize, n: usize, disallowed: &Point, disallowed_radius: usize) -> Vec<Point>{
+fn sample_points(size: &BoardSize, n: usize, disallowed: &Point, disallowed_radius: usize) -> Option<Vec<Point>>{
     // TODO: handle n > area
     let mut possible: Vec<usize> = (0..size.area()).collect();
     possible.shuffle(&mut thread_rng());
-    possible.iter().map(|&x| size.point_from_integer(x).expect("bad size!"))
-                   .filter(|x| disallowed.distance(x) > disallowed_radius).take(n).collect()
+    let possible: Vec<Point> = possible.iter().map(|&x| size.point_from_integer(x).expect("bad size!"))
+                   .filter(|x| disallowed.distance(x) > disallowed_radius).take(n).collect();
+    match possible.len() == n {
+        false => None,
+        true => Some(possible)
+    }
 }
+
 pub struct Board {
     pub size: BoardSize,
     field: Vec<Vec<Cell>>,
@@ -229,7 +234,7 @@ impl Board {
     }
 
     fn initialize(&mut self, point: &Point){
-        for point in sample_points(&self.size, self.mine_count, point, 2){ //FIXME: hardcoding the radius
+        for point in sample_points(&self.size, self.mine_count, point, 2).expect("failed to construct board"){ //FIXME: hardcoding the radius
             self.field[point.0][point.1].content = Content::Mine;
             for neighbor in self.neighbor_points(&point){
                 let mut cell =  self.retrieve_cell_mutable(&neighbor);
@@ -433,12 +438,24 @@ mod cell_tests {
 }
 
 #[cfg(test)]
-mod boardsize_tests {
-    use super::*;
-    fn point_fits_on_board(point: &Point, board: &BoardSize) -> bool {
-        point.0 >= 0 && point.0 < board.height && point.1 >= 0 && point.1 < board.width
+fn point_fits_on_board(point: &Point, board: &BoardSize) -> bool {
+    point.0 >= 0 && point.0 < board.height && point.1 >= 0 && point.1 < board.width
+}
+
+#[cfg(test)]
+fn valid_points_for_board(points: &[Point], board: &BoardSize) -> bool {
+    // points should have length area() and every pair should appear once
+    let points_count = points.len();
+    if points.iter().any(|point| !point_fits_on_board(point, &board)) {
+        return false
     }
 
+    points.into_iter().dedup().count() == points_count
+}
+
+#[cfg(test)]
+mod boardsize_tests {
+    use super::*;
 
     proptest! {
         #[test]
@@ -464,13 +481,69 @@ mod boardsize_tests {
             let board = BoardSize{width, height};
             let points = board.points();
             let points_count = points.len();
-            // points should have length area() and every pair should appear once
             prop_assert_eq!(points_count, board.area());
-            for point in points.iter() {
-                prop_assert!(point_fits_on_board(point, &board));
+            valid_points_for_board(&points, &board);
+        }
+    }
+}
+
+#[cfg(test)]
+mod point_tests {
+    use super::*;
+
+
+    proptest! {
+        #[test]
+        fn distance_to_self_is_zero(x in any::<usize>(), y in any::<usize>()) {
+            let point = Point(x, y);
+            prop_assert_eq!(point.distance(&point), 0);
+            prop_assert_eq!(point, point);
+        }
+
+        #[test]
+        fn distance_is_symmetric(x1 in 0..1000usize, y1 in 0..1000usize,
+                                 x2 in 0..1000usize, y2 in 0..1000usize) {
+            let point1 = Point(x1, y1);
+            let point2 = Point(x2, y2);
+            prop_assert_eq!(point1.distance(&point2), point2.distance(&point1));
+        }
+
+        #[test]
+        fn test_partial_eq(x1 in 0..1000usize, y1 in 0..1000usize,
+                           x2 in 0..1000usize, y2 in 0..1000usize) {
+            let point1 = Point(x1, y1);
+            let point2 = Point(x2, y2);
+            let distance = point1.distance(&point2);
+            match point1 == point2 {
+                true => prop_assert_eq!(distance, 0),
+                false => prop_assert_ne!(distance, 0)
             }
-            let unique_count = points.into_iter().dedup().count();
-            prop_assert_eq!(unique_count, points_count);
+        }
+    }
+}
+
+#[cfg(test)]
+mod module_tests {
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn test_sample_points(width in 0..100usize, height in 0..100usize,
+                              x in 0..100usize, y in 0..100usize,
+                              num_mines in 0..10000usize, disallowed_radius in 0..100usize) {
+            let boardsize = BoardSize{width, height};
+            let point = Point(x, y);
+            match sample_points(&boardsize, num_mines, &point, disallowed_radius){
+                None => {
+                    let failure_conditions = point_fits_on_board(&point, &boardsize)
+                        || boardsize.area() < (disallowed_radius*2+1).pow(2) + num_mines;
+                    prop_assert!(failure_conditions);
+                },
+                Some(points) => {
+                    prop_assert_eq!(points.len(), num_mines);
+                    valid_points_for_board(&points, &boardsize);
+                }
+            }
         }
     }
 }
