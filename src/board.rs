@@ -438,24 +438,22 @@ mod cell_tests {
 }
 
 #[cfg(test)]
-fn point_fits_on_board(point: &Point, board: &BoardSize) -> bool {
-    point.0 >= 0 && point.0 < board.height && point.1 >= 0 && point.1 < board.width
-}
+mod board_tests {
+    use super::*;
 
-#[cfg(test)]
-fn valid_points_for_board(points: &[Point], board: &BoardSize) -> bool {
-    // points should have length area() and every pair should appear once
-    let points_count = points.len();
-    if points.iter().any(|point| !point_fits_on_board(point, &board)) {
-        return false
+    fn point_fits_on_board(point: &Point, board: &BoardSize) -> bool {
+        point.0 >= 0 && point.0 < board.height && point.1 >= 0 && point.1 < board.width
     }
 
-    points.into_iter().dedup().count() == points_count
-}
+    fn valid_points_for_board(points: &[Point], board: &BoardSize) -> bool {
+        // points should have length area() and every pair should appear once
+        let points_count = points.len();
+        if points.iter().any(|point| !point_fits_on_board(point, &board)) {
+            return false
+        }
 
-#[cfg(test)]
-mod boardsize_tests {
-    use super::*;
+        points.into_iter().dedup().count() == points_count
+    }
 
     proptest! {
         #[test]
@@ -484,15 +482,7 @@ mod boardsize_tests {
             prop_assert_eq!(points_count, board.area());
             valid_points_for_board(&points, &board);
         }
-    }
-}
 
-#[cfg(test)]
-mod point_tests {
-    use super::*;
-
-
-    proptest! {
         #[test]
         fn distance_to_self_is_zero(x in any::<usize>(), y in any::<usize>()) {
             let point = Point(x, y);
@@ -519,14 +509,7 @@ mod point_tests {
                 false => prop_assert_ne!(distance, 0)
             }
         }
-    }
-}
 
-#[cfg(test)]
-mod module_tests {
-    use super::*;
-
-    proptest! {
         #[test]
         fn test_sample_points(width in 0..100usize, height in 0..100usize,
                               x in 0..100usize, y in 0..100usize,
