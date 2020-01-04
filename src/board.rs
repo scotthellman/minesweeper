@@ -160,12 +160,13 @@ impl fmt::Display for Board {
 }
 
 impl Board {
-    pub fn new_from_ints(width: usize, height: usize, mine_count: usize) -> Board{
+    pub fn new_from_ints(width: usize, height: usize, mine_count: usize) -> Option<Board>{
         let size = BoardSize{width, height};
         Board::new_from_size(size, mine_count)
     }
 
-    pub fn new_from_size(size: BoardSize, mine_count: usize) -> Board {
+    pub fn new_from_size(size: BoardSize, mine_count: usize) -> Option<Board> {
+        if mine_count > size.area() {return None}; //TODO: this is too liberal
         let initialized = false;
         let mut field = Vec::with_capacity(size.height);
         for i in 0..size.height {
@@ -176,7 +177,7 @@ impl Board {
             field.push(row_vec);
         }
 
-        Board {size, field, mine_count, initialized}
+        Some(Board {size, field, mine_count, initialized})
     }
 
 
@@ -526,6 +527,65 @@ mod board_tests {
                     prop_assert_eq!(points.len(), num_mines);
                     valid_points_for_board(&points, &boardsize);
                 }
+            }
+        }
+
+        #[test]
+        fn test_new_from_int(width in 0..100usize, height in 0..100usize, mine_count in 0..10000usize) {
+            match Board::new_from_ints(width, height, mine_count) {
+                None => { 
+                    prop_assert!(mine_count > width * height);
+                },
+                Some(board) => {
+                    prop_assert!(!board.initialized);
+                    prop_assert_eq!(board.mine_count, mine_count);
+                    prop_assert_eq!(board.size.width, width);
+                    prop_assert_eq!(board.size.height, height);
+                    let points: Vec<Point> = board.cells().into_iter().map(|c| c.point.clone()).collect();
+                    prop_assert_eq!(points.len(), board.size.area());
+                    prop_assert!(valid_points_for_board(&points, &board.size));
+                }
+            }
+        }
+
+        #[test]
+        fn test_retrieve_cell(width in 0..100usize, height in 0..100usize) {
+            let board = Board::new_from_ints(width, height, 0).unwrap();
+            let points: Vec<Point> = board.cells().into_iter().map(|c| c.point.clone()).collect();
+            for point in points {
+                let retrieved_point = board.retrieve_cell(&point).point;
+                prop_assert_eq!(point, retrieved_point);
+            }
+        }
+
+        #[test]
+        fn test_unknown_count(width in 1..20usize, height in 1..20usize) {
+            let mut board = Board::new_from_ints(width, height, 0).unwrap();
+            let points: Vec<Point> = board.cells().into_iter().map(|c| c.point.clone()).collect();
+            let mut unknown_points = points.len();
+            prop_assert_eq!(board.unknown_count(), unknown_points);
+            for point in points {
+                board.retrieve_cell_mutable(&point).knowledge = KnowledgeState::Known;
+                unknown_points -= 1;
+                prop_assert_eq!(board.unknown_count(), unknown_points);
+            }
+        }
+
+        #[test]
+        fn test_found_mines_and_remaining_mines(width in 1..20usize, height in 1..20usize) {
+            let mine_count = 1;
+            let mut board = Board::new_from_ints(width, height, mine_count).unwrap();
+            let mut mine_count = mine_count as i32;
+            let points: Vec<Point> = board.cells().into_iter().map(|c| c.point.clone()).collect();
+            let mut flagged_points = 0;
+            prop_assert_eq!(board.found_mines(), flagged_points);
+            prop_assert_eq!(board.remaining_mines(), mine_count);
+            for point in points {
+                board.retrieve_cell_mutable(&point).knowledge = KnowledgeState::Flag;
+                flagged_points += 1;
+                mine_count -= 1;
+                prop_assert_eq!(board.found_mines(), flagged_points);
+                prop_assert_eq!(board.remaining_mines(), mine_count);
             }
         }
     }
