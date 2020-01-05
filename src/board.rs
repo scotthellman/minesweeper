@@ -103,6 +103,10 @@ impl Point {
         //l-inf norm seems most appropriate for minesweeper
         (self.0 as i64 - other.0 as i64).abs().max((self.1 as i64 - other.1 as i64).abs()) as usize
     }
+
+    pub fn to_string(&self) -> String {
+        format!("Point({},{})", self.0, self.1)
+    }
 }
 
 

@@ -5,6 +5,7 @@ extern crate proptest;
 pub mod board;
 pub mod ai;
 pub mod interaction;
+pub mod constraint;
 
 use board::Point;
 
