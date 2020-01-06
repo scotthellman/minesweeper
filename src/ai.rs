@@ -1,4 +1,5 @@
 use rand::thread_rng;
+use std::rc::Rc;
 use std::marker::PhantomData;
 use rand::seq::SliceRandom;
 use super::board::Board;
@@ -76,15 +77,19 @@ fn build_constraint_solver(board: &Board) -> ConstraintSolver<Point, bool>
         .map(|cell| cell.point.clone()) //TODO: not entirely sure why i'm not just using copy?
         .collect();
 
-    let mut constraints: Vec<&Constraint<Point, bool>> = points.iter()
+    let mut constraints: Vec<Rc<dyn Constraint<Point, bool>>> = points.iter()
         .flat_map(|point| board.neighbor_points(point))
         .dedup()
         .map(|point| board.retrieve_cell(&point))
         .filter(|cell| cell.is_known_unmined())
-        .map(|cell| &construct_constraint(&board, &cell.point) as &Constraint<Point, bool>)
+        .map(|cell| {
+            let constraint = construct_constraint(&board, &cell.point);
+            let r: Rc<dyn Constraint<Point, bool>> = Rc::new(constraint);
+            r
+        })
         .collect();
 
-    constraints.push(&construct_global_constraint(&board, &points));
+    constraints.push(Rc::new(construct_global_constraint(&board, &points)));
 
     let variables = points.into_iter()
         .map(|point| Variable{id: point, value: None, possible: vec![false, true]})
