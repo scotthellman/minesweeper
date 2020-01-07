@@ -1,43 +1,51 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::rc::Rc;
+use std::fmt::Debug;
 
-pub struct Variable<S: Hash + Eq + Copy, T: Copy> 
+#[derive(Debug)]
+pub struct Variable<S: Hash + Eq + Copy + Debug, T: Copy + Debug> 
 {
     pub id: S,
     pub value: Option<T>,
-    possible: Vec<T>
+    pub possible: Vec<T>
 }
 
-pub trait Constraint<S: Hash + Eq + Copy, T: Copy> 
+pub trait Constraint<S: Hash + Eq + Copy + Debug, T: Copy + Debug> 
 {
     fn get_constrained_variable_ids(&self) -> Vec<S>;
     fn check_constraint(&self, variable_lookup: &HashMap<S, Variable<S, T>>) -> bool;
 }
 
-pub struct ConstraintSolver< S: Hash + Eq + Copy, T: Copy> 
+pub struct ConstraintSolver< S: Hash + Eq + Copy + Debug, T: Copy + Debug> 
 {
     pub variable_lookup: HashMap<S, Variable<S, T>>,
     variable_to_constraints: HashMap<S, Vec<Rc<dyn Constraint<S, T>>>>,
-    constraints: Vec<Rc<dyn Constraint<S, T>>>,
 }
 
-impl<S: Hash + Eq + Copy, T: Copy> ConstraintSolver<S, T> 
+impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug> ConstraintSolver<S, T> 
 {
     pub fn new(variables: Vec<Variable<S, T>>, constraints: Vec<Rc<dyn Constraint<S, T>>>) -> ConstraintSolver<S, T>{
         //let variable_to_constraints:HashMap<String, Vec<&Constraint<T>>> = constraints.iter()
         let mut variable_to_constraints:HashMap<S, Vec<Rc<dyn Constraint<S, T>>>> = HashMap::with_capacity(constraints.len());
-        constraints.iter()
+        constraints.iter().for_each(|constraint| {
+            constraint.get_constrained_variable_ids().iter().for_each( |v_id| {
+                let group = variable_to_constraints.entry(*v_id).or_insert(vec![]);
+                group.push(Rc::clone(constraint)) // i am baffled that group doesn't have to be mut?
+            });
+        });
+        /*constraints.iter()
             .flat_map(|constraint| constraint.get_constrained_variable_ids().iter()
-                                         .map(|v_id| (*v_id, *constraint)))
+                                         .map(|v_id| (*v_id, Rc::clone(constraint))))
             .for_each(|(v_id, constraint)| {
                 let mut group = variable_to_constraints.entry(v_id).or_insert(vec![]);
                 group.push(Rc::clone(&constraint));
             });
+            */
         let variable_lookup = variables.into_iter()
             .map(|v| (v.id, v))
             .collect();
-        ConstraintSolver{variable_lookup, variable_to_constraints, constraints}
+        ConstraintSolver{variable_lookup, variable_to_constraints}
     }
 
     pub fn backtrack(&mut self) -> Option<HashMap<S, T>>{
@@ -61,16 +69,13 @@ impl<S: Hash + Eq + Copy, T: Copy> ConstraintSolver<S, T>
                 let states = self.variable_lookup.get(v_id).unwrap().possible.to_vec();
                 for state in states {
                     self.set_variable_state(v_id, Some(state));
-                    //OK so I need to push all of these into methods on self
                     if self.constraints_are_satisfied(v_id){
-                        match self._backtrack(&remaining_points[1..]){
-                            None => self.set_variable_state(v_id, None),
-                            Some(mut children) => {
-                                children.insert(*v_id, state);
-                                return Some(children)
-                            }
+                        if let Some(mut children) = self._backtrack(&remaining_points[1..]){
+                            children.insert(*v_id, state);
+                            return Some(children)
                         }
                     }
+                    self.set_variable_state(v_id, None)
                 }
                 return None
             }

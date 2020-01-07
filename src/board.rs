@@ -136,6 +136,14 @@ impl BoardSize {
         }
         return Some(Point(x/self.width, x%self.width))
     }
+
+    pub fn integer_from_point(&self, point: &Point) -> Option<usize> {
+        let x = point.0*self.width + point.1 % self.width;
+        match x > self.area(){
+            true => return None,
+            false => return Some(x)
+        }
+    }
 }
 
 fn sample_points(size: &BoardSize, n: usize, disallowed: &Point, disallowed_radius: usize) -> Option<Vec<Point>>{
@@ -247,6 +255,14 @@ impl Board {
             }
         }
         self.initialized = true;
+    }
+
+    pub fn get_border_points(&self) -> Vec<Point>{
+        self.size.points().iter()
+            .map(|point| self.retrieve_cell(point))
+            .filter(|cell| cell.knowledge.is_unknown() && self.has_known_neighbors(&cell.point))
+            .map(|cell| cell.point.clone()) //TODO: not entirely sure why i'm not just using copy?
+            .collect()
     }
 
     pub fn toggle_flag(&mut self, point: &Point){
@@ -390,8 +406,8 @@ impl Board {
 
     pub fn is_won(&self) -> bool {
         // ideally this wouldn't be computed every single time
-        // for now winning means revealing every safe
-        let total = self.size.area() - self.mine_count;
+        // for now winning means identifying every mine
+        let total = self.mine_count;
         let found = self.found_mines();
         total == found
     }

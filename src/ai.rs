@@ -59,7 +59,7 @@ fn construct_constraint(board: &Board, point: &Point) -> MineConstraint
 {
     let cell = board.retrieve_cell(point);
     let unknown_neighbors: Vec<Point> = board.neighbor_cells_from_point(point).iter()
-        .filter(|cell| !cell.knowledge.is_known())
+        .filter(|cell| cell.knowledge.is_unknown())
         .map(|cell| cell.point)
         .collect();
     let total_unknown = unknown_neighbors.len();
@@ -71,17 +71,15 @@ fn construct_constraint(board: &Board, point: &Point) -> MineConstraint
 
 fn build_constraint_solver(board: &Board) -> ConstraintSolver<Point, bool>
 {
-    let points: Vec<Point> = board.size.points().iter()
-        .map(|point| board.retrieve_cell(point))
-        .filter(|cell| cell.knowledge.is_unknown() && board.has_known_neighbors(&cell.point))
-        .map(|cell| cell.point.clone()) //TODO: not entirely sure why i'm not just using copy?
+    let points: Vec<Point> = board.get_border_points(); //Not great i call this multiple times each search
+
+    let constraining_points: HashSet<_> = points.iter()
+        .flat_map(|point| board.neighbor_points(point))
         .collect();
 
-    let mut constraints: Vec<Rc<dyn Constraint<Point, bool>>> = points.iter()
-        .flat_map(|point| board.neighbor_points(point))
-        .dedup()
+    let mut constraints: Vec<Rc<dyn Constraint<Point, bool>>> = constraining_points.iter()
         .map(|point| board.retrieve_cell(&point))
-        .filter(|cell| cell.is_known_unmined())
+        .filter(|cell| cell.is_known_unmined() && board.has_unknown_neighbors(&cell.point))
         .map(|cell| {
             let constraint = construct_constraint(&board, &cell.point);
             let r: Rc<dyn Constraint<Point, bool>> = Rc::new(constraint);
@@ -165,14 +163,6 @@ impl NaiveAI {
             actions.push(ActionType::Flag(best_point.expect("so we just didn't have anything or something?")))
         }
         actions
-        /*match NaiveAI::safest_frontier_click(board, probabilities){
-            None => vec![],
-            Some((point, proba)) => {
-                println!("Naively estimating probability at {}", proba);
-                vec![ActionType::Click(point)]
-            }
-        }
-        */
     }
 
     fn known_safe_flags(board: &Board) -> Vec<Point> {
@@ -295,8 +285,8 @@ impl NaiveAI {
         // TODO: ok so this isn't really naive anymore is it
         let mut counts: HashMap<Point, usize> = HashMap::new();
         let rollouts = 20;
-        let mut border_points: Vec<Point> = Vec::with_capacity(0);
-        for i in 0..rollouts{
+        let border_points: Vec<Point> = board.get_border_points();
+        for _ in 0..rollouts{
             // FIXME need randomness
             let mut solver = build_constraint_solver(board);
             let assignments = solver.backtrack().expect("failed to find a solution");
