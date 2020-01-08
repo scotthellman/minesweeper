@@ -26,7 +26,6 @@ pub struct ConstraintSolver< S: Hash + Eq + Copy + Debug, T: Copy + Debug>
 impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug> ConstraintSolver<S, T> 
 {
     pub fn new(variables: Vec<Variable<S, T>>, constraints: Vec<Rc<dyn Constraint<S, T>>>) -> ConstraintSolver<S, T>{
-        //let variable_to_constraints:HashMap<String, Vec<&Constraint<T>>> = constraints.iter()
         let mut variable_to_constraints:HashMap<S, Vec<Rc<dyn Constraint<S, T>>>> = HashMap::with_capacity(constraints.len());
         constraints.iter().for_each(|constraint| {
             constraint.get_constrained_variable_ids().iter().for_each( |v_id| {
@@ -34,14 +33,6 @@ impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug> ConstraintSolver<S, T>
                 group.push(Rc::clone(constraint)) // i am baffled that group doesn't have to be mut?
             });
         });
-        /*constraints.iter()
-            .flat_map(|constraint| constraint.get_constrained_variable_ids().iter()
-                                         .map(|v_id| (*v_id, Rc::clone(constraint))))
-            .for_each(|(v_id, constraint)| {
-                let mut group = variable_to_constraints.entry(v_id).or_insert(vec![]);
-                group.push(Rc::clone(&constraint));
-            });
-            */
         let variable_lookup = variables.into_iter()
             .map(|v| (v.id, v))
             .collect();
@@ -59,13 +50,13 @@ impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug> ConstraintSolver<S, T>
 
     fn _backtrack(&mut self, remaining_points: &[S]) -> Option<HashMap<S, T>> {
         // most naive thing to do is just use variables in order
+        // TODO: A way to specify a strategy to use for point selection
         match remaining_points.first(){
             None => {
                 let empty: HashMap<S, T> = HashMap::with_capacity(self.variable_lookup.len());
                 Some(empty)
             } ,
             Some(v_id) => {
-                //let variable: &mut Variable<S, T> = self.variable_lookup.get_mut(v_id).expect("variable lookup can't find variable");
                 let states = self.variable_lookup.get(v_id).unwrap().possible.to_vec();
                 for state in states {
                     self.set_variable_state(v_id, Some(state));

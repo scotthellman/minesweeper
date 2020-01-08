@@ -3,7 +3,6 @@ use rand::seq::SliceRandom;
 use std::collections::HashSet;
 use std::collections::HashMap;
 use std::fmt;
-use itertools::Itertools;
 
 #[derive(Debug, Clone)]
 pub enum Content {
@@ -316,6 +315,36 @@ impl Board {
         self.neighbor_points(point).len() - self.count_known_neighbors(point)
     }
 
+    pub fn known_flaggable_neighbors(&self, point: &Point) -> Vec<Point> {
+        let assumed_mined_neighbor_count = self.count_assumed_mined_neighbors(point);
+        let unknown_neighbor_count = self.count_unknown_neighbors(point);
+        let mined_neighbor_count = self.retrieve_cell(point).mined_neighbor_count;
+        let remaining_mines = mined_neighbor_count as i32 - assumed_mined_neighbor_count as i32;
+
+        if remaining_mines == unknown_neighbor_count as i32 {
+            self.neighbor_points(point).into_iter()
+                .filter(|point| self.retrieve_cell(point).knowledge.is_unknown())
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+
+    pub fn known_safe_neighbors(&self, point: &Point) -> Vec<Point> {
+        //TODO: so this is basically known_flaggable_neighbors
+        let assumed_mined_neighbor_count = self.count_assumed_mined_neighbors(point);
+        let mined_neighbor_count = self.retrieve_cell(point).mined_neighbor_count;
+        let remaining_mines = mined_neighbor_count as i32 - assumed_mined_neighbor_count as i32;
+
+        if remaining_mines == 0 as i32 {
+            self.neighbor_points(point).into_iter()
+                .filter(|point| self.retrieve_cell(point).knowledge.is_unknown())
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+
     pub fn chord(&mut self, point: &Point) -> usize{
         let cell = self.retrieve_cell(point);
         if !cell.knowledge.is_known(){
@@ -463,7 +492,7 @@ mod board_tests {
     use super::*;
 
     fn point_fits_on_board(point: &Point, board: &BoardSize) -> bool {
-        point.0 >= 0 && point.0 < board.height && point.1 >= 0 && point.1 < board.width
+        point.0 < board.height && point.1 < board.width
     }
 
     fn valid_points_for_board(points: &[Point], board: &BoardSize) -> bool {

@@ -42,14 +42,11 @@ pub fn game_loop(agent: &mut impl Agent, board: &mut board::Board){
             }
         };
         if mines > 0 {
-            break
+            println!("{}", board);
+            println!("you lose");
+            return
         }
     }
     println!("{}", board);
-    if board.is_won(){
-        println!("you win!");
-    }
-    else{
-        println!("you lose");
-    }
+    println!("you win!");
 }
