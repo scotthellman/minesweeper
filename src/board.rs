@@ -160,7 +160,7 @@ fn sample_points(size: &BoardSize, n: usize, disallowed: &Point, disallowed_radi
 
 pub struct Board {
     pub size: BoardSize,
-    field: Vec<Vec<Cell>>,
+    field: Vec<Cell>,
     pub mine_count: usize,
     pub initialized: bool,
 }
@@ -177,16 +177,28 @@ impl Board {
         Board::new_from_size(size, mine_count)
     }
 
+    pub fn new_with_mines(size: BoardSize, mines: &[Point]) -> Option<Board> {
+        let mut board = match Board::new_from_size(size, mines.len()){
+            None => return None,
+            Some(board) => board
+        };
+        // TODO: i should probably think about returning None if there's an invalid point huh
+        // TODO: it's minor but really this and initialize should use the same code all the way
+        // through
+        board.initialized = true;
+        mines.iter().for_each( |point| {
+            board.set_point_as_mined(point);
+        });
+        Some(board)
+    }
+
     pub fn new_from_size(size: BoardSize, mine_count: usize) -> Option<Board> {
         if mine_count > size.area() {return None}; //TODO: this is too liberal
         let initialized = false;
         let mut field = Vec::with_capacity(size.height);
-        for i in 0..size.height {
-            let mut row_vec = Vec::with_capacity(size.width);
-            for j in 0..size.width {
-                row_vec.push(Cell::create_empty(Point(i, j)));
-            }
-            field.push(row_vec);
+        for i in 0..size.area() {
+            let point = size.point_from_integer(i).expect("Somehow failed at constructing points on the board");
+            field.push(Cell::create_empty(point));
         }
 
         Some(Board {size, field, mine_count, initialized})
@@ -194,11 +206,13 @@ impl Board {
 
 
     pub fn retrieve_cell(&self, point: &Point) -> &Cell{
-        &self.field[point.0][point.1]
+        let index = self.size.integer_from_point(point).expect("Bad point for retrieve_cell");
+        &self.field[index]
     }
 
     fn retrieve_cell_mutable(&mut self, point: &Point) -> &mut Cell{
-        &mut self.field[point.0][point.1]
+        let index = self.size.integer_from_point(point).expect("Bad point for retrieve_cell_mutable");
+        &mut self.field[index]
     }
 
     // TODO: Ideally this is an iterator
@@ -213,7 +227,7 @@ impl Board {
     }
 
     pub fn found_mines(&self) -> usize{
-        self.field.iter().flatten()
+        self.field.iter()
             .filter(|cell| cell.is_assumed_mine())
             .count()
     }
@@ -246,13 +260,20 @@ impl Board {
         self.neighbor_cells_from_point(&cell.point)
     }
 
+    fn set_point_as_mined(&mut self, point: &Point){
+        {
+            let mut cell =  self.retrieve_cell_mutable(point);
+            cell.content = Content::Mine;
+        }
+        for neighbor in self.neighbor_points(&point){
+            let mut cell =  self.retrieve_cell_mutable(&neighbor);
+            cell.mined_neighbor_count += 1;
+        }
+    }
+
     fn initialize(&mut self, point: &Point){
         for point in sample_points(&self.size, self.mine_count, point, 2).expect("failed to construct board"){ //FIXME: hardcoding the radius
-            self.field[point.0][point.1].content = Content::Mine;
-            for neighbor in self.neighbor_points(&point){
-                let mut cell =  self.retrieve_cell_mutable(&neighbor);
-                cell.mined_neighbor_count += 1;
-            }
+            self.set_point_as_mined(&point);
         }
         self.initialized = true;
     }
@@ -419,10 +440,11 @@ impl Board {
             result += &i.to_string()[..];
         }
         result += "\n";
-        for (i, row) in self.field.iter().enumerate() {
+        for i in 0..self.size.height{
             result += &i.to_string()[..];
             result += " ";
-            for cell in row{
+            for j in 0..self.size.width{
+                let cell = self.retrieve_cell(&Point(i, j));
                 let c = match proba_lookup.get(&cell.point){
                     None => cell.to_str(),
                     Some(p) => proba_to_char(p)
@@ -504,6 +526,17 @@ mod board_tests {
         }
 
         points.into_iter().dedup().count() == points_count
+    }
+
+    #[test]
+    fn test_flag_neighbors() {
+        let width = 20;
+        let height = 20;
+        let size = BoardSize{width, height};
+        let mines = vec![Point(0,0), Point(1,1), Point(3,3)];
+        let mut board = Board::new_with_mines(size, &mines).unwrap();
+
+        let point = Point(0,1);
     }
 
     proptest! {
@@ -638,5 +671,18 @@ mod board_tests {
                 prop_assert_eq!(board.remaining_mines(), mine_count);
             }
         }
+
+        #[test]
+        fn test_neighbor_methods(width in 1..20usize, height in 1..20usize) {
+            let mine_count = 1;
+            let board = Board::new_from_ints(width, height, mine_count).unwrap();
+            let points: Vec<Point> = board.size.points();
+            for point in points {
+                let all_distance_one = board.neighbor_points(&point).iter()
+                    .all(|neighbor| (point.distance(neighbor) == 1));
+                prop_assert!(all_distance_one);
+            }
+        }
+
     }
 }
