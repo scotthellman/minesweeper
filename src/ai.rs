@@ -25,7 +25,27 @@ impl Constraint<Point, bool> for MineConstraint {
     }
 
     fn check_constraint(&self, variable_lookup: &HashMap<Point, Variable<Point, bool>>) -> bool {
-        let (mined, empty) = self.constrained_points.iter()
+        let (mined, empty) = self.count_remaining_mined_and_empty(variable_lookup);
+        mined <= self.expected_mines && empty <= self.expected_empties
+    }
+
+    fn consistent_states_for_variable(&self, variable_lookup: &HashMap<Point, Variable<Point, bool>>, v_id: &Point) -> Vec<bool>{
+        let (mined, empty) = self.count_remaining_mined_and_empty(variable_lookup);
+        let mut possible = Vec::with_capacity(2);
+        if mined > 0 {
+            possible.push(true);
+        };
+        if empty > 0 {
+            possible.push(false);
+        }
+        possible
+    }
+}
+
+impl MineConstraint {
+
+    fn count_remaining_mined_and_empty(&self, variable_lookup: &HashMap<Point, Variable<Point, bool>>) -> (i32, i32) {
+        self.constrained_points.iter()
             .map(|v_id| variable_lookup.get(v_id).expect("variable not in lookup"))
             .map(|variable| {
                 match variable.value {
@@ -38,8 +58,7 @@ impl Constraint<Point, bool> for MineConstraint {
                     }
                 }
             })
-            .fold((0, 0), |acc, next| (acc.0 + next.0, acc.1 + next.1));
-        mined <= self.expected_mines && empty <= self.expected_empties
+            .fold((0, 0), |acc, next| (acc.0 + next.0, acc.1 + next.1))
     }
 }
 

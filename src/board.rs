@@ -3,6 +3,7 @@ use rand::seq::SliceRandom;
 use std::collections::HashSet;
 use std::collections::HashMap;
 use std::fmt;
+use itertools::Itertools;
 
 #[derive(Debug, Clone)]
 pub enum Content {

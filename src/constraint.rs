@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::hash::Hash;
 use std::rc::Rc;
 use std::fmt::Debug;
@@ -15,6 +16,7 @@ pub trait Constraint<S: Hash + Eq + Copy + Debug, T: Copy + Debug>
 {
     fn get_constrained_variable_ids(&self) -> Vec<S>;
     fn check_constraint(&self, variable_lookup: &HashMap<S, Variable<S, T>>) -> bool;
+    fn consistent_states_for_variable(&self, variable_lookup: &HashMap<S, Variable<S, T>>, v_id: &S) -> Vec<T>;
 }
 
 pub struct ConstraintSolver< S: Hash + Eq + Copy + Debug, T: Copy + Debug> 
@@ -60,7 +62,7 @@ impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug> ConstraintSolver<S, T>
                 let states = self.variable_lookup.get(v_id).unwrap().possible.to_vec();
                 for state in states {
                     self.set_variable_state(v_id, Some(state));
-                    if self.constraints_are_satisfied(v_id){
+                    if self.constraints_are_satisfied(v_id) && self.forward_check(v_id){
                         if let Some(mut children) = self._backtrack(&remaining_points[1..]){
                             children.insert(*v_id, state);
                             return Some(children)
@@ -79,6 +81,21 @@ impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug> ConstraintSolver<S, T>
             None => true, //no constraints on the variable so go for it
             Some(constraints) => {
                 constraints.iter().all(|constraint| constraint.check_constraint(&self.variable_lookup))
+            }
+        }
+    }
+
+    fn forward_check(&self, v_id: &S) -> bool {
+        let variable = self.variable_lookup.get(v_id).unwrap();
+        match self.variable_to_constraints.get(&variable.id){
+            None => true, //no constraints on the variable so go for it
+            Some(constraints) => {
+                constraints.iter()
+                    .all(|constraint| {
+                        constraint.get_constrained_variable_ids().iter().all(|v_id| {
+                            constraint.consistent_states_for_variable(&self.variable_lookup, v_id).len() > 0
+                        })
+                    })
             }
         }
     }
