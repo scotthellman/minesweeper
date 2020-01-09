@@ -16,7 +16,8 @@ use std::collections::HashMap;
 struct MineConstraint {
     expected_mines: i32,
     expected_empties: i32,
-    constrained_points: Vec<Point>
+    constrained_points: Vec<Point>,
+    global: bool //FIXME: this is lazy of me
 }
 
 impl Constraint<Point, bool> for MineConstraint {
@@ -24,8 +25,12 @@ impl Constraint<Point, bool> for MineConstraint {
         self.constrained_points.iter().map(|s| *s).collect()
     }
 
-    fn check_constraint(&self, variable_lookup: &HashMap<Point, Variable<Point, bool>>) -> bool {
-        let (mined, empty) = self.count_remaining_mined_and_empty(variable_lookup);
+    fn check_constraint(&self, solver: &ConstraintSolver<Point, bool>) -> bool {
+        let (mined, empty) = if self.global {
+            (*solver.global_counts.get(&true).unwrap() as i32, *solver.global_counts.get(&false).unwrap() as i32)
+        } else {
+            self.count_remaining_mined_and_empty(&solver.variable_lookup)
+        };
         mined <= self.expected_mines && empty <= self.expected_empties
     }
 
@@ -65,8 +70,7 @@ impl MineConstraint {
 fn construct_global_constraint(board: &Board, available_points: &Vec<Point>) -> MineConstraint{
     let expected_mines = board.remaining_mines(); //this is really just a number we can't exceed
     let expected_empties = board.unknown_count() as i32 - board.remaining_mines();
-    let constrained_points = available_points.iter().map(|p| *p).collect();
-    MineConstraint{expected_mines, expected_empties, constrained_points}
+    MineConstraint{expected_mines, expected_empties, constrained_points: vec![], global: true}
 }
 
 
@@ -81,7 +85,7 @@ fn construct_constraint(board: &Board, point: &Point) -> MineConstraint
     let known_mines = board.count_assumed_mined_neighbors(point);
     let expected_mines = cell.mined_neighbor_count as i32 - known_mines as i32;
     let expected_empties = total_unknown as i32 - expected_mines as i32 ;
-    MineConstraint{expected_mines, expected_empties, constrained_points:unknown_neighbors}
+    MineConstraint{expected_mines, expected_empties, constrained_points:unknown_neighbors, global: false}
 }
 
 fn build_constraint_solver(board: &Board) -> ConstraintSolver<Point, bool>
@@ -181,6 +185,7 @@ impl NaiveAI {
     }
 
     fn known_safe_flags(board: &Board) -> HashSet<Point> {
+        // FIXME: this is broken except for 1s
         board.size.points().iter()
              .filter(|point| board.retrieve_cell(point).knowledge.is_known())
             .flat_map(|point| board.known_flaggable_neighbors(point))

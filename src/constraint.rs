@@ -5,27 +5,28 @@ use std::rc::Rc;
 use std::fmt::Debug;
 
 #[derive(Debug)]
-pub struct Variable<S: Hash + Eq + Copy + Debug, T: Copy + Debug> 
+pub struct Variable<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq> 
 {
     pub id: S,
     pub value: Option<T>,
     pub possible: Vec<T>
 }
 
-pub trait Constraint<S: Hash + Eq + Copy + Debug, T: Copy + Debug> 
+pub trait Constraint<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq> 
 {
     fn get_constrained_variable_ids(&self) -> Vec<S>;
-    fn check_constraint(&self, variable_lookup: &HashMap<S, Variable<S, T>>) -> bool;
+    fn check_constraint(&self, solver: &ConstraintSolver<S, T>) -> bool;
     fn consistent_states_for_variable(&self, variable_lookup: &HashMap<S, Variable<S, T>>, v_id: &S) -> Vec<T>;
 }
 
-pub struct ConstraintSolver< S: Hash + Eq + Copy + Debug, T: Copy + Debug> 
+pub struct ConstraintSolver< S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq> 
 {
     pub variable_lookup: HashMap<S, Variable<S, T>>,
     variable_to_constraints: HashMap<S, Vec<Rc<dyn Constraint<S, T>>>>,
+    pub global_counts: HashMap<T, usize>
 }
 
-impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug> ConstraintSolver<S, T> 
+impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq> ConstraintSolver<S, T> 
 {
     pub fn new(variables: Vec<Variable<S, T>>, constraints: Vec<Rc<dyn Constraint<S, T>>>) -> ConstraintSolver<S, T>{
         let mut variable_to_constraints:HashMap<S, Vec<Rc<dyn Constraint<S, T>>>> = HashMap::with_capacity(constraints.len());
@@ -35,10 +36,13 @@ impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug> ConstraintSolver<S, T>
                 group.push(Rc::clone(constraint)) // i am baffled that group doesn't have to be mut?
             });
         });
+        let global_counts = HashMap::with_capacity(2);
+
         let variable_lookup = variables.into_iter()
             .map(|v| (v.id, v))
             .collect();
-        ConstraintSolver{variable_lookup, variable_to_constraints}
+
+        ConstraintSolver{variable_lookup, variable_to_constraints, global_counts}
     }
 
     pub fn backtrack(&mut self) -> Option<HashMap<S, T>>{
@@ -47,6 +51,15 @@ impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug> ConstraintSolver<S, T>
     }
 
     fn set_variable_state(&mut self, v_id: &S, state: Option<T>){
+        let var = self.variable_lookup.get_mut(v_id).expect("variable lookup can't find variable");
+        if let Some(state) = var.value {
+            let count = self.global_counts.entry(state).or_insert(1);
+            *count -= 1;
+        }
+        if let Some(state) = state {
+            let count = self.global_counts.entry(state).or_insert(0);
+            *count += 1;
+        }
         self.variable_lookup.get_mut(v_id).expect("variable lookup can't find variable").value = state;
     }
 
@@ -80,7 +93,7 @@ impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug> ConstraintSolver<S, T>
         match self.variable_to_constraints.get(&variable.id){
             None => true, //no constraints on the variable so go for it
             Some(constraints) => {
-                constraints.iter().all(|constraint| constraint.check_constraint(&self.variable_lookup))
+                constraints.iter().all(|constraint| constraint.check_constraint(&self))
             }
         }
     }
