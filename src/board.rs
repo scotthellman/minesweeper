@@ -334,8 +334,10 @@ impl Board {
     }
 
     pub fn count_unknown_neighbors(&self, point: &Point) -> usize {
-        self.neighbor_points(point).len() - self.count_known_neighbors(point)
-    }
+        self.neighbor_cells_from_point(point).iter()
+            .filter(|neighbor| neighbor.knowledge.is_unknown())
+            .count()
+    } //FIXME: ok these three could all be one function that takes a Content arg
 
     pub fn known_flaggable_neighbors(&self, point: &Point) -> Vec<Point> {
         let assumed_mined_neighbor_count = self.count_assumed_mined_neighbors(point);
