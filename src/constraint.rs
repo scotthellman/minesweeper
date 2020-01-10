@@ -12,23 +12,51 @@ pub struct Variable<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq>
     pub possible: Vec<T>
 }
 
+// TODO: this is some straight java thinking
+pub trait SelectionStrategy<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq> {
+    fn get_next_index(&self, variable_lookup: &HashMap<S, Variable<S, T>>,
+                      variable_to_constraints: &HashMap<S, Vec<Rc<dyn Constraint<S, T>>>>,
+                      points: &[S], available_indices: &HashSet<usize>) -> Option<usize>;
+}
+
+pub struct RandomSelectionStrategy { }
+
+impl<S, T> SelectionStrategy<S, T> for RandomSelectionStrategy where
+    S: Copy + Debug + Hash + Eq,
+    T: Copy + Debug + Hash + Eq
+{
+    fn get_next_index(&self, variable_lookup: &HashMap<S, Variable<S, T>>,
+                      variable_to_constraints: &HashMap<S, Vec<Rc<dyn Constraint<S, T>>>>,
+                      points: &[S], available_indices: &HashSet<usize>) -> Option<usize> {
+        match available_indices.iter().next() {
+            None => None,
+            Some(&val) => Some(val)
+        }
+    }
+}
+
+
 pub trait Constraint<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq> 
 {
     fn get_constrained_variable_ids(&self) -> Vec<S>;
-    fn check_constraint(&self, solver: &ConstraintSolver<S, T>) -> bool;
+    fn check_constraint(&self, global_counts: &HashMap<T, usize>,
+                        variable_lookup: &HashMap<S, Variable<S,T>>)-> bool;
     fn consistent_states_for_variable(&self, variable_lookup: &HashMap<S, Variable<S, T>>, v_id: &S) -> Vec<T>;
 }
 
-pub struct ConstraintSolver< S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq> 
+pub struct ConstraintSolver< S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq, Strat: SelectionStrategy<S, T>> 
 {
     pub variable_lookup: HashMap<S, Variable<S, T>>,
     variable_to_constraints: HashMap<S, Vec<Rc<dyn Constraint<S, T>>>>,
-    pub global_counts: HashMap<T, usize>
+    pub global_counts: HashMap<T, usize>,
+    selection_strategy: Strat
 }
 
-impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq> ConstraintSolver<S, T> 
+impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq, Strat: SelectionStrategy<S, T>> ConstraintSolver<S, T, Strat> 
 {
-    pub fn new(variables: Vec<Variable<S, T>>, constraints: Vec<Rc<dyn Constraint<S, T>>>) -> ConstraintSolver<S, T>{
+    pub fn new(variables: Vec<Variable<S, T>>,
+               constraints: Vec<Rc<dyn Constraint<S, T>>>,
+               selection_strategy: Strat) -> ConstraintSolver<S, T, Strat>{
         let mut variable_to_constraints:HashMap<S, Vec<Rc<dyn Constraint<S, T>>>> = HashMap::with_capacity(constraints.len());
         constraints.iter().for_each(|constraint| {
             constraint.get_constrained_variable_ids().iter().for_each( |v_id| {
@@ -42,7 +70,7 @@ impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq> ConstraintSolver<
             .map(|v| (v.id, v))
             .collect();
 
-        ConstraintSolver{variable_lookup, variable_to_constraints, global_counts}
+        ConstraintSolver{variable_lookup, variable_to_constraints, global_counts, selection_strategy}
     }
 
     pub fn backtrack(&mut self) -> Option<HashMap<S, T>>{
@@ -64,17 +92,8 @@ impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq> ConstraintSolver<
         self.variable_lookup.get_mut(v_id).expect("variable lookup can't find variable").value = state;
     }
 
-    fn get_next_index(&self, points: &[S], available_indices: &HashSet<usize>) -> Option<usize> {
-        match available_indices.iter().next() {
-            None => None,
-            Some(&val) => Some(val)
-        }
-    }
-
     fn _backtrack(&mut self, points: &[S], available_indices: &mut HashSet<usize>) -> Option<HashMap<S, T>> {
-        // most naive thing to do is just use variables in order
-        // TODO: A way to specify a strategy to use for point selection
-        match self.get_next_index(points, available_indices) {
+        match self.selection_strategy.get_next_index(&self.variable_lookup, &self.variable_to_constraints, points, available_indices) {
             None => {
                 let empty: HashMap<S, T> = HashMap::with_capacity(self.variable_lookup.len());
                 Some(empty)
@@ -104,7 +123,7 @@ impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq> ConstraintSolver<
         match self.variable_to_constraints.get(&variable.id){
             None => true, //no constraints on the variable so go for it
             Some(constraints) => {
-                constraints.iter().all(|constraint| constraint.check_constraint(&self))
+                constraints.iter().all(|constraint| constraint.check_constraint(&self.global_counts, &self.variable_lookup))
             }
         }
     }

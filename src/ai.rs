@@ -8,6 +8,7 @@ use super::Agent;
 use super::constraint::Variable;
 use super::constraint::Constraint;
 use super::constraint::ConstraintSolver;
+use super::constraint::RandomSelectionStrategy;
 use std::thread;
 use std::time;
 use std::collections::HashSet;
@@ -25,11 +26,12 @@ impl Constraint<Point, bool> for MineConstraint {
         self.constrained_points.iter().map(|s| *s).collect()
     }
 
-    fn check_constraint(&self, solver: &ConstraintSolver<Point, bool>) -> bool {
+    fn check_constraint(&self, global_counts: &HashMap<bool, usize>,
+                        variable_lookup: &HashMap<Point, Variable<Point,bool>>)-> bool {
         let (mined, empty) = if self.global {
-            (*solver.global_counts.get(&true).unwrap() as i32, *solver.global_counts.get(&false).unwrap() as i32)
+            (*global_counts.get(&true).unwrap() as i32, *global_counts.get(&false).unwrap() as i32)
         } else {
-            self.count_remaining_mined_and_empty(&solver.variable_lookup)
+            self.count_remaining_mined_and_empty(&variable_lookup)
         };
         mined <= self.expected_mines && empty <= self.expected_empties
     }
@@ -88,7 +90,7 @@ fn construct_constraint(board: &Board, point: &Point) -> MineConstraint
     MineConstraint{expected_mines, expected_empties, constrained_points:unknown_neighbors, global: false}
 }
 
-fn build_constraint_solver(board: &Board) -> ConstraintSolver<Point, bool>
+fn build_constraint_solver(board: &Board) -> ConstraintSolver<Point, bool, RandomSelectionStrategy>
 {
     let points: Vec<Point> = board.get_border_points(); //Not great i call this multiple times each search
 
@@ -111,7 +113,7 @@ fn build_constraint_solver(board: &Board) -> ConstraintSolver<Point, bool>
     let variables = points.into_iter()
         .map(|point| Variable{id: point, value: None, possible: vec![false, true]})
         .collect();
-    ConstraintSolver::new(variables, constraints)
+    ConstraintSolver::new(variables, constraints, RandomSelectionStrategy{})
 }
 
 
@@ -185,7 +187,6 @@ impl NaiveAI {
     }
 
     fn known_safe_flags(board: &Board) -> HashSet<Point> {
-        // FIXME: this is broken except for 1s
         board.size.points().iter()
              .filter(|point| board.retrieve_cell(point).knowledge.is_known())
             .flat_map(|point| board.known_flaggable_neighbors(point))
