@@ -47,7 +47,8 @@ impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq> ConstraintSolver<
 
     pub fn backtrack(&mut self) -> Option<HashMap<S, T>>{
         let remaining_points: Vec<S> = self.variable_lookup.keys().map(|s| *s).collect();
-        self._backtrack(&remaining_points[..])
+        let mut indices: HashSet<usize> = (0..remaining_points.len()).collect();
+        self._backtrack(&remaining_points, &mut indices)
     }
 
     fn set_variable_state(&mut self, v_id: &S, state: Option<T>){
@@ -63,26 +64,36 @@ impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq> ConstraintSolver<
         self.variable_lookup.get_mut(v_id).expect("variable lookup can't find variable").value = state;
     }
 
-    fn _backtrack(&mut self, remaining_points: &[S]) -> Option<HashMap<S, T>> {
+    fn get_next_index(&self, points: &[S], available_indices: &HashSet<usize>) -> Option<usize> {
+        match available_indices.iter().next() {
+            None => None,
+            Some(&val) => Some(val)
+        }
+    }
+
+    fn _backtrack(&mut self, points: &[S], available_indices: &mut HashSet<usize>) -> Option<HashMap<S, T>> {
         // most naive thing to do is just use variables in order
         // TODO: A way to specify a strategy to use for point selection
-        match remaining_points.first(){
+        match self.get_next_index(points, available_indices) {
             None => {
                 let empty: HashMap<S, T> = HashMap::with_capacity(self.variable_lookup.len());
                 Some(empty)
             } ,
-            Some(v_id) => {
-                let states = self.variable_lookup.get(v_id).unwrap().possible.to_vec();
+            Some(index) => {
+                available_indices.remove(&index);
+                let v_id = points[index];
+                let states = self.variable_lookup.get(&v_id).unwrap().possible.to_vec();
                 for state in states {
-                    self.set_variable_state(v_id, Some(state));
-                    if self.constraints_are_satisfied(v_id) && self.forward_check(v_id){
-                        if let Some(mut children) = self._backtrack(&remaining_points[1..]){
-                            children.insert(*v_id, state);
+                    self.set_variable_state(&v_id, Some(state));
+                    if self.constraints_are_satisfied(&v_id) && self.forward_check(&v_id){
+                        if let Some(mut children) = self._backtrack(points, available_indices){
+                            children.insert(v_id, state);
                             return Some(children)
                         }
                     }
-                    self.set_variable_state(v_id, None)
+                    self.set_variable_state(&v_id, None)
                 }
+                available_indices.insert(index);
                 return None
             }
         }
