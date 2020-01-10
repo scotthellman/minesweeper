@@ -35,6 +35,31 @@ impl<S, T> SelectionStrategy<S, T> for RandomSelectionStrategy where
     }
 }
 
+pub struct DegreeSelectionStrategy { }
+
+impl<S, T> SelectionStrategy<S, T> for DegreeSelectionStrategy where
+    S: Copy + Debug + Hash + Eq,
+    T: Copy + Debug + Hash + Eq
+{
+    fn get_next_index(&self, variable_lookup: &HashMap<S, Variable<S, T>>,
+                      variable_to_constraints: &HashMap<S, Vec<Rc<dyn Constraint<S, T>>>>,
+                      points: &[S], available_indices: &HashSet<usize>) -> Option<usize> {
+        let result = available_indices.iter()
+            .map(|idx| {
+                let count = match  variable_to_constraints.get(&points[*idx]) {
+                    None => 0,
+                    Some(constraints) => constraints.len()
+                };
+                (count, idx)
+            })
+            .max();
+        match result {
+            None => None,
+            Some((_, idx)) => Some(*idx)
+        }
+    }
+}
+
 
 pub trait Constraint<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq> 
 {

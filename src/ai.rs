@@ -9,6 +9,7 @@ use super::constraint::Variable;
 use super::constraint::Constraint;
 use super::constraint::ConstraintSolver;
 use super::constraint::RandomSelectionStrategy;
+use super::constraint::DegreeSelectionStrategy;
 use std::thread;
 use std::time;
 use std::collections::HashSet;
