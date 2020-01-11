@@ -95,7 +95,8 @@ impl Cell {
         }
     }
 }
-#[derive(Debug, Eq, Clone, Hash, Copy)]
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Copy)]
 pub struct Point(pub usize, pub usize);
 
 impl Point {
@@ -104,15 +105,11 @@ impl Point {
         (self.0 as i64 - other.0 as i64).abs().max((self.1 as i64 - other.1 as i64).abs()) as usize
     }
 
-    pub fn to_string(&self) -> String {
-        format!("Point({},{})", self.0, self.1)
-    }
 }
 
-
-impl PartialEq for Point {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0 && self.1 == other.1
+impl fmt::Display for Point {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Point({},{})", self.0, self.1)
     }
 }
 
@@ -134,14 +131,15 @@ impl BoardSize {
         if x >= self.area() {
             return None
         }
-        return Some(Point(x/self.width, x%self.width))
+        Some(Point(x/self.width, x%self.width))
     }
 
     pub fn integer_from_point(&self, point: &Point) -> Option<usize> {
         let x = point.0*self.width + point.1 % self.width;
-        match x > self.area(){
-            true => return None,
-            false => return Some(x)
+        if x > self.area(){
+            None
+        } else {
+            Some(x)
         }
     }
 }
@@ -152,9 +150,10 @@ fn sample_points(size: &BoardSize, n: usize, disallowed: &Point, disallowed_radi
     possible.shuffle(&mut thread_rng());
     let possible: Vec<Point> = possible.iter().map(|&x| size.point_from_integer(x).expect("bad size!"))
                    .filter(|x| disallowed.distance(x) > disallowed_radius).take(n).collect();
-    match possible.len() == n {
-        false => None,
-        true => Some(possible)
+    if possible.len() == n {
+        Some(possible)
+    } else {
+        None
     }
 }
 
@@ -167,7 +166,7 @@ pub struct Board {
 
 impl fmt::Display for Board {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_string())
+        write!(f, "{}", self.to_string_with_probabilities(&[]))
     }
 }
 
@@ -282,7 +281,7 @@ impl Board {
         self.size.points().iter()
             .map(|point| self.retrieve_cell(point))
             .filter(|cell| cell.knowledge.is_unknown() && self.has_known_neighbors(&cell.point))
-            .map(|cell| cell.point.clone()) //TODO: not entirely sure why i'm not just using copy?
+            .map(|cell| cell.point)
             .collect()
     }
 
@@ -406,18 +405,15 @@ impl Board {
     fn find_region(&self, point: Point, acc: &mut HashSet<Point>) {
         let neighbors = self.neighbor_points(&point);
         let cell = self.retrieve_cell(&point);
-        match cell.content {
-            Content::Empty => {
-                if !cell.knowledge.is_known() && cell.mined_neighbor_count == 0 {
-                    for neighbor in neighbors{
-                        if !acc.contains(&neighbor){
-                            acc.insert(neighbor.clone());
-                            self.find_region(neighbor, acc);
-                        }
+        if let Content::Empty = cell.content {
+            if !cell.knowledge.is_known() && cell.mined_neighbor_count == 0 {
+                for neighbor in neighbors{
+                    if !acc.contains(&neighbor){
+                        acc.insert(neighbor.clone());
+                        self.find_region(neighbor, acc);
                     }
                 }
             }
-            _ => { }
         };
     }
 
@@ -429,11 +425,7 @@ impl Board {
         cell
     }
 
-    fn to_string(&self) -> String {
-        self.to_string_with_probabilities(&vec![])
-    }
-
-    pub fn to_string_with_probabilities(&self, probabilities: &Vec<(Point, f32)>) -> String {
+    pub fn to_string_with_probabilities(&self, probabilities: &[(Point, f32)]) -> String {
         let proba_lookup: HashMap<Point, f32> = probabilities.iter()
             .map(|(p, f)| (*p, *f))
             .collect();
@@ -449,7 +441,7 @@ impl Board {
                 let cell = self.retrieve_cell(&Point(i, j));
                 let c = match proba_lookup.get(&cell.point){
                     None => cell.to_str(),
-                    Some(p) => proba_to_char(p)
+                    Some(p) => proba_to_char(*p)
                 };
                 result += &c[..];
             }
@@ -467,18 +459,18 @@ impl Board {
     }
 }
 
-fn proba_to_char(proba: &f32) -> String{
-    if *proba == 0.0 {
+fn proba_to_char(proba: f32) -> String{
+    if proba == 0.0 {
         String::from("◌")
-    } else if *proba < 0.2 {
+    } else if proba < 0.2 {
         String::from("-")
-    } else if *proba < 0.4 {
+    } else if proba < 0.4 {
         String::from("=")
-    } else if *proba < 0.6 {
+    } else if proba < 0.6 {
         String::from("▤")
-    } else if *proba < 0.8 {
+    } else if proba < 0.8 {
         String::from("▦")
-    } else if *proba < 1.0 {
+    } else if proba < 1.0 {
         String::from("▩")
     } else{
         String::from("●")
@@ -527,18 +519,7 @@ mod board_tests {
             return false
         }
 
-        points.into_iter().dedup().count() == points_count
-    }
-
-    #[test]
-    fn test_flag_neighbors() {
-        let width = 20;
-        let height = 20;
-        let size = BoardSize{width, height};
-        let mines = vec![Point(0,0), Point(1,1), Point(3,3)];
-        let mut board = Board::new_with_mines(size, &mines).unwrap();
-
-        let point = Point(0,1);
+        points.iter().dedup().count() == points_count
     }
 
     proptest! {
@@ -590,9 +571,10 @@ mod board_tests {
             let point1 = Point(x1, y1);
             let point2 = Point(x2, y2);
             let distance = point1.distance(&point2);
-            match point1 == point2 {
-                true => prop_assert_eq!(distance, 0),
-                false => prop_assert_ne!(distance, 0)
+            if point1 == point2 {
+                prop_assert_eq!(distance, 0)
+            } else {
+                prop_assert_ne!(distance, 0)
             }
         }
 
@@ -626,7 +608,7 @@ mod board_tests {
                     prop_assert_eq!(board.mine_count, mine_count);
                     prop_assert_eq!(board.size.width, width);
                     prop_assert_eq!(board.size.height, height);
-                    let points: Vec<Point> = board.cells().into_iter().map(|c| c.point.clone()).collect();
+                    let points: Vec<Point> = board.cells().into_iter().map(|c| c.point).collect();
                     prop_assert_eq!(points.len(), board.size.area());
                     prop_assert!(valid_points_for_board(&points, &board.size));
                 }
@@ -636,7 +618,7 @@ mod board_tests {
         #[test]
         fn test_retrieve_cell(width in 0..100usize, height in 0..100usize) {
             let board = Board::new_from_ints(width, height, 0).unwrap();
-            let points: Vec<Point> = board.cells().into_iter().map(|c| c.point.clone()).collect();
+            let points: Vec<Point> = board.cells().into_iter().map(|c| c.point).collect();
             for point in points {
                 let retrieved_point = board.retrieve_cell(&point).point;
                 prop_assert_eq!(point, retrieved_point);
@@ -646,7 +628,7 @@ mod board_tests {
         #[test]
         fn test_unknown_count(width in 1..20usize, height in 1..20usize) {
             let mut board = Board::new_from_ints(width, height, 0).unwrap();
-            let points: Vec<Point> = board.cells().into_iter().map(|c| c.point.clone()).collect();
+            let points: Vec<Point> = board.cells().into_iter().map(|c| c.point).collect();
             let mut unknown_points = points.len();
             prop_assert_eq!(board.unknown_count(), unknown_points);
             for point in points {
@@ -661,7 +643,7 @@ mod board_tests {
             let mine_count = 1;
             let mut board = Board::new_from_ints(width, height, mine_count).unwrap();
             let mut mine_count = mine_count as i32;
-            let points: Vec<Point> = board.cells().into_iter().map(|c| c.point.clone()).collect();
+            let points: Vec<Point> = board.cells().into_iter().map(|c| c.point).collect();
             let mut flagged_points = 0;
             prop_assert_eq!(board.found_mines(), flagged_points);
             prop_assert_eq!(board.remaining_mines(), mine_count);

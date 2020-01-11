@@ -1,15 +1,12 @@
 use std::rc::Rc;
 use super::board::Board;
-use super::board::KnowledgeState;
 use super::board::Point;
-use super::board::Content;
 use super::ActionType;
 use super::Agent;
 use super::constraint::Variable;
 use super::constraint::Constraint;
 use super::constraint::ConstraintSolver;
 use super::constraint::RandomSelectionStrategy;
-use super::constraint::DegreeSelectionStrategy;
 use std::thread;
 use std::time;
 use std::collections::HashSet;
@@ -24,7 +21,7 @@ struct MineConstraint {
 
 impl Constraint<Point, bool> for MineConstraint {
     fn get_constrained_variable_ids(&self) -> Vec<Point>{
-        self.constrained_points.iter().map(|s| *s).collect()
+        self.constrained_points.iter().copied().collect()
     }
 
     fn check_constraint(&self, global_counts: &HashMap<bool, usize>,
@@ -37,7 +34,7 @@ impl Constraint<Point, bool> for MineConstraint {
         mined <= self.expected_mines && empty <= self.expected_empties
     }
 
-    fn consistent_states_for_variable(&self, variable_lookup: &HashMap<Point, Variable<Point, bool>>, v_id: &Point) -> Vec<bool>{
+    fn consistent_states_for_variable(&self, variable_lookup: &HashMap<Point, Variable<Point, bool>>, _: &Point) -> Vec<bool>{
         let (mined, empty) = self.count_remaining_mined_and_empty(variable_lookup);
         let mut possible = Vec::with_capacity(2);
         if mined > 0 {
@@ -59,9 +56,10 @@ impl MineConstraint {
                 match variable.value {
                     None => (0, 0),
                     Some(val) => {
-                        match val {
-                            false => (0, 1),
-                            true => (1, 0)
+                        if val {
+                            (1, 0)
+                        } else {
+                            (0, 1)
                         }
                     }
                 }
@@ -70,7 +68,7 @@ impl MineConstraint {
     }
 }
 
-fn construct_global_constraint(board: &Board, available_points: &Vec<Point>) -> MineConstraint{
+fn construct_global_constraint(board: &Board) -> MineConstraint{
     let expected_mines = board.remaining_mines(); //this is really just a number we can't exceed
     let expected_empties = board.unknown_count() as i32 - board.remaining_mines();
     MineConstraint{expected_mines, expected_empties, constrained_points: vec![], global: true}
@@ -109,7 +107,7 @@ fn build_constraint_solver(board: &Board) -> ConstraintSolver<Point, bool, Rando
         })
         .collect();
 
-    constraints.push(Rc::new(construct_global_constraint(&board, &points)));
+    constraints.push(Rc::new(construct_global_constraint(&board)));
 
     let variables = points.into_iter()
         .map(|point| Variable{id: point, value: None, possible: vec![false, true]})
@@ -154,13 +152,13 @@ impl NaiveAI {
 
     pub fn generate_next_moves(board: &Board) -> Vec<ActionType>{
         let safe_flags = NaiveAI::known_safe_flags(board);
-        if safe_flags.len() > 0{
-            return safe_flags.iter().map(|point| ActionType::Flag(point.clone())).collect()
+        if !safe_flags.is_empty() {
+            return safe_flags.iter().map(|point| ActionType::Flag(*point)).collect()
         }
 
         let safe_clicks = NaiveAI::known_safe_clicks(board);
-        if safe_clicks.len() > 0{
-            return safe_clicks.iter().map(|point| ActionType::Click(point.clone())).collect()
+        if !safe_clicks.is_empty() {
+            return safe_clicks.iter().map(|point| ActionType::Click(*point)).collect()
         }
 
         let probabilities = NaiveAI::get_monte_carlo_probabilities(board);
@@ -174,14 +172,14 @@ impl NaiveAI {
                 highest_proba = proba;
                 best_point = Some(point);
             }
-            if proba == 0.0{
+            if proba == 0.0 {
                 actions.push(ActionType::Click(point));
             }
-            if proba == 1.0{
+            if proba as usize == 1 {
                 actions.push(ActionType::Flag(point));
             }
         }
-        if actions.len() == 0{
+        if actions.is_empty() {
             actions.push(ActionType::Flag(best_point.expect("so we just didn't have anything or something?")))
         }
         actions
@@ -208,7 +206,6 @@ impl NaiveAI {
         let rollouts = 20;
         let border_points: Vec<Point> = board.get_border_points();
         for _ in 0..rollouts{
-            // FIXME need randomness
             let mut solver = build_constraint_solver(board);
             let assignments = solver.backtrack().expect("failed to find a solution");
             assignments.iter().for_each(|(point, mined)| {

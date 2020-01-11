@@ -25,9 +25,9 @@ impl<S, T> SelectionStrategy<S, T> for RandomSelectionStrategy where
     S: Copy + Debug + Hash + Eq,
     T: Copy + Debug + Hash + Eq
 {
-    fn get_next_index(&self, variable_lookup: &HashMap<S, Variable<S, T>>,
-                      variable_to_constraints: &HashMap<S, Vec<Rc<dyn Constraint<S, T>>>>,
-                      points: &[S], available_indices: &HashSet<usize>) -> Option<usize> {
+    fn get_next_index(&self, _: &HashMap<S, Variable<S, T>>,
+                      _: &HashMap<S, Vec<Rc<dyn Constraint<S, T>>>>,
+                      _: &[S], available_indices: &HashSet<usize>) -> Option<usize> {
         match available_indices.iter().next() {
             None => None,
             Some(&val) => Some(val)
@@ -41,7 +41,7 @@ impl<S, T> SelectionStrategy<S, T> for DegreeSelectionStrategy where
     S: Copy + Debug + Hash + Eq,
     T: Copy + Debug + Hash + Eq
 {
-    fn get_next_index(&self, variable_lookup: &HashMap<S, Variable<S, T>>,
+    fn get_next_index(&self, _: &HashMap<S, Variable<S, T>>,
                       variable_to_constraints: &HashMap<S, Vec<Rc<dyn Constraint<S, T>>>>,
                       points: &[S], available_indices: &HashSet<usize>) -> Option<usize> {
         let result = available_indices.iter()
@@ -85,7 +85,7 @@ impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq, Strat: SelectionS
         let mut variable_to_constraints:HashMap<S, Vec<Rc<dyn Constraint<S, T>>>> = HashMap::with_capacity(constraints.len());
         constraints.iter().for_each(|constraint| {
             constraint.get_constrained_variable_ids().iter().for_each( |v_id| {
-                let group = variable_to_constraints.entry(*v_id).or_insert(vec![]);
+                let group = variable_to_constraints.entry(*v_id).or_insert_with(|| vec![]);
                 group.push(Rc::clone(constraint)) // i am baffled that group doesn't have to be mut?
             });
         });
@@ -99,7 +99,7 @@ impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq, Strat: SelectionS
     }
 
     pub fn backtrack(&mut self) -> Option<HashMap<S, T>>{
-        let remaining_points: Vec<S> = self.variable_lookup.keys().map(|s| *s).collect();
+        let remaining_points: Vec<S> = self.variable_lookup.keys().copied().collect();
         let mut indices: HashSet<usize> = (0..remaining_points.len()).collect();
         self._backtrack(&remaining_points, &mut indices)
     }
@@ -138,7 +138,7 @@ impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq, Strat: SelectionS
                     self.set_variable_state(&v_id, None)
                 }
                 available_indices.insert(index);
-                return None
+                None
             }
         }
     }
@@ -161,7 +161,7 @@ impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq, Strat: SelectionS
                 constraints.iter()
                     .all(|constraint| {
                         constraint.get_constrained_variable_ids().iter().all(|v_id| {
-                            constraint.consistent_states_for_variable(&self.variable_lookup, v_id).len() > 0
+                            !constraint.consistent_states_for_variable(&self.variable_lookup, v_id).is_empty()
                         })
                     })
             }
