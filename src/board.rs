@@ -142,10 +142,13 @@ impl BoardSize {
             Some(x)
         }
     }
+
+    pub fn point_is_in_bounds(&self, point: &Point) -> bool {
+        self.integer_from_point(point).is_some()
+    }
 }
 
 fn sample_points(size: &BoardSize, n: usize, disallowed: &Point, disallowed_radius: usize) -> Option<Vec<Point>>{
-    // TODO: handle n > area
     let mut possible: Vec<usize> = (0..size.area()).collect();
     possible.shuffle(&mut thread_rng());
     let possible: Vec<Point> = possible.iter().map(|&x| size.point_from_integer(x).expect("bad size!"))
@@ -177,13 +180,13 @@ impl Board {
     }
 
     pub fn new_with_mines(size: BoardSize, mines: &[Point]) -> Option<Board> {
+        if mines.iter().filter(|point| !size.point_is_in_bounds(point)).count() > 0 {
+            return None
+        }
         let mut board = match Board::new_from_size(size, mines.len()){
             None => return None,
             Some(board) => board
         };
-        // TODO: i should probably think about returning None if there's an invalid point huh
-        // TODO: it's minor but really this and initialize should use the same code all the way
-        // through
         board.initialized = true;
         mines.iter().for_each( |point| {
             board.set_point_as_mined(point);
@@ -270,10 +273,15 @@ impl Board {
         }
     }
 
-    fn initialize(&mut self, point: &Point){
-        for point in sample_points(&self.size, self.mine_count, point, 2).expect("failed to construct board"){ //FIXME: hardcoding the radius
-            self.set_point_as_mined(&point);
-        }
+    fn initialize_from_point(&mut self, point: &Point){
+        let mined_points = sample_points(&self.size, self.mine_count, point, 2).expect("failed to init mines");
+        self.initialize_with_mines(&mined_points);
+    }
+
+    fn initialize_with_mines(&mut self, mined_points: &[Point]) {
+        // At this point we are assuming that all the points are valid
+        // which seems maybe not ideal?
+        mined_points.iter().for_each(|point| self.set_point_as_mined(point));
         self.initialized = true;
     }
 
@@ -384,7 +392,7 @@ impl Board {
 
     pub fn probe(&mut self, point: &Point) -> usize{
         if !&self.initialized {
-            self.initialize(point);
+            self.initialize_from_point(point);
         }
 
         // overall a lot of this seems bad

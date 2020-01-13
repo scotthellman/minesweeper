@@ -151,6 +151,7 @@ impl NaiveAI {
     }
 
     pub fn generate_next_moves(board: &Board) -> Vec<ActionType>{
+        // TODO: next up: a time budget for searching
         let safe_flags = NaiveAI::known_safe_flags(board);
         if !safe_flags.is_empty() {
             return safe_flags.iter().map(|point| ActionType::Flag(*point)).collect()
