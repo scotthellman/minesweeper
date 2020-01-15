@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::hash::Hash;
 use std::rc::Rc;
 use std::fmt::Debug;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct Variable<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq> 
@@ -12,10 +13,10 @@ pub struct Variable<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq>
     pub possible: Vec<T>
 }
 
-// TODO: this is some straight java thinking
+// TODO: this feels very java
 pub trait SelectionStrategy<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq> {
     fn get_next_index(&self, variable_lookup: &HashMap<S, Variable<S, T>>,
-                      variable_to_constraints: &HashMap<S, Vec<Rc<dyn Constraint<S, T>>>>,
+                      variable_to_constraints: &HashMap<S, Vec<Arc<dyn Constraint<S, T>  + Send + Sync>>>,
                       points: &[S], available_indices: &HashSet<usize>) -> Option<usize>;
 }
 
@@ -26,7 +27,7 @@ impl<S, T> SelectionStrategy<S, T> for RandomSelectionStrategy where
     T: Copy + Debug + Hash + Eq
 {
     fn get_next_index(&self, _: &HashMap<S, Variable<S, T>>,
-                      _: &HashMap<S, Vec<Rc<dyn Constraint<S, T>>>>,
+                      _: &HashMap<S, Vec<Arc<dyn Constraint<S, T>  + Send + Sync>>>,
                       _: &[S], available_indices: &HashSet<usize>) -> Option<usize> {
         match available_indices.iter().next() {
             None => None,
@@ -42,7 +43,7 @@ impl<S, T> SelectionStrategy<S, T> for DegreeSelectionStrategy where
     T: Copy + Debug + Hash + Eq
 {
     fn get_next_index(&self, _: &HashMap<S, Variable<S, T>>,
-                      variable_to_constraints: &HashMap<S, Vec<Rc<dyn Constraint<S, T>>>>,
+                      variable_to_constraints: &HashMap<S, Vec<Arc<dyn Constraint<S, T>  + Send + Sync>>>,
                       points: &[S], available_indices: &HashSet<usize>) -> Option<usize> {
         let result = available_indices.iter()
             .map(|idx| {
@@ -72,7 +73,7 @@ pub trait Constraint<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq>
 pub struct ConstraintSolver< S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq, Strat: SelectionStrategy<S, T>> 
 {
     pub variable_lookup: HashMap<S, Variable<S, T>>,
-    variable_to_constraints: HashMap<S, Vec<Rc<dyn Constraint<S, T>>>>,
+    variable_to_constraints: HashMap<S, Vec<Arc<dyn Constraint<S, T>  + Send + Sync>>>,
     pub global_counts: HashMap<T, usize>,
     selection_strategy: Strat
 }
@@ -80,13 +81,13 @@ pub struct ConstraintSolver< S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash
 impl<S: Hash + Eq + Copy + Debug, T: Copy + Debug + Hash + Eq, Strat: SelectionStrategy<S, T>> ConstraintSolver<S, T, Strat> 
 {
     pub fn new(variables: Vec<Variable<S, T>>,
-               constraints: Vec<Rc<dyn Constraint<S, T>>>,
+               constraints: Vec<Arc<dyn Constraint<S, T>  + Send + Sync>>,
                selection_strategy: Strat) -> ConstraintSolver<S, T, Strat>{
-        let mut variable_to_constraints:HashMap<S, Vec<Rc<dyn Constraint<S, T>>>> = HashMap::with_capacity(constraints.len());
+        let mut variable_to_constraints:HashMap<S, Vec<Arc<dyn Constraint<S, T>  + Send + Sync>>> = HashMap::with_capacity(constraints.len());
         constraints.iter().for_each(|constraint| {
             constraint.get_constrained_variable_ids().iter().for_each( |v_id| {
                 let group = variable_to_constraints.entry(*v_id).or_insert_with(|| vec![]);
-                group.push(Rc::clone(constraint)) // i am baffled that group doesn't have to be mut?
+                group.push(Arc::clone(constraint)) // i am baffled that group doesn't have to be mut?
             });
         });
         let global_counts = HashMap::with_capacity(2);

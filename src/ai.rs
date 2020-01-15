@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::{Mutex, Arc};
 use super::board::Board;
 use super::board::Point;
 use super::ActionType;
@@ -97,17 +97,17 @@ fn build_constraint_solver(board: &Board) -> ConstraintSolver<Point, bool, Rando
         .flat_map(|point| board.neighbor_points(point))
         .collect();
 
-    let mut constraints: Vec<Rc<dyn Constraint<Point, bool>>> = constraining_points.iter()
+    let mut constraints: Vec<Arc<dyn Constraint<Point, bool>  + Send + Sync>> = constraining_points.iter()
         .map(|point| board.retrieve_cell(&point))
         .filter(|cell| cell.is_known_unmined() && board.has_unknown_neighbors(&cell.point))
         .map(|cell| {
             let constraint = construct_constraint(&board, &cell.point);
-            let r: Rc<dyn Constraint<Point, bool>> = Rc::new(constraint);
+            let r: Arc<dyn Constraint<Point, bool>  + Send + Sync> = Arc::new(constraint);
             r
         })
         .collect();
 
-    constraints.push(Rc::new(construct_global_constraint(&board)));
+    constraints.push(Arc::new(construct_global_constraint(&board)));
 
     let variables = points.into_iter()
         .map(|point| Variable{id: point, value: None, possible: vec![false, true]})
@@ -206,26 +206,46 @@ impl NaiveAI {
         let start = time::Instant::now();
 
         // TODO: ok so this isn't really naive anymore is it
-        let mut counts: HashMap<Point, usize> = HashMap::new();
-        let rollouts = 20;
+        let counts: Arc<Mutex<HashMap<Point, usize>>> = Arc::new(Mutex::new(HashMap::new()));
+        let rollouts = Arc::new(Mutex::new(0));
+        let threads = 4;
+        let mut handles = vec![];
         let border_points: Vec<Point> = board.get_border_points();
-        while time::Instant::now().duration_since(start) < self.max_move_time {
+        let max_move_time = self.max_move_time;
+        for _ in 0..threads {
+            let counts = Arc::clone(&counts);
+            let rollouts = Arc::clone(&rollouts);
             let mut solver = build_constraint_solver(board);
-            let assignments = solver.backtrack().expect("failed to find a solution");
-            assignments.iter().for_each(|(point, mined)| {
-                match mined {
-                    false => {},
-                    true => {
-                        if counts.contains_key(&point){
-                            *counts.get_mut(&point).unwrap() += 1;
+            let handle = thread::spawn(move || {
+                while time::Instant::now().duration_since(start) < max_move_time {
+                    let assignments = solver.backtrack().expect("failed to find a solution");
+                    let mut counts = counts.lock().unwrap();
+                    assignments.iter().for_each(|(point, mined)| {
+                        match mined {
+                            false => {},
+                            true => {
+                                if counts.contains_key(&point){
+                                    *counts.get_mut(&point).unwrap() += 1;
+                                }
+                                else{
+                                    counts.insert(*point, 1);
+                                }
+                            }
                         }
-                        else{
-                            counts.insert(*point, 1);
-                        }
-                    }
+                    });
+                    let mut rollouts = rollouts.lock().unwrap();
+                    *rollouts += 1;
                 }
             });
+            handles.push(handle);
         }
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        let counts = counts.lock().unwrap();
+        let rollouts = *rollouts.lock().unwrap();
+        println!("We got {} rollouts", rollouts);
+        thread::sleep(time::Duration::from_millis(1000));
         border_points.into_iter()
             .map(|point| {
                 let count = counts.get(&point).unwrap_or(&0);
