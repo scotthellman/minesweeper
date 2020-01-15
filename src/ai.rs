@@ -118,40 +118,41 @@ fn build_constraint_solver(board: &Board) -> ConstraintSolver<Point, bool, Rando
 
 pub struct NaiveAI {
     move_queue: Vec<ActionType>,
-    move_delay: u64
+    min_move_time: time::Duration,
+    max_move_time: time::Duration
 }
 
 impl Agent for NaiveAI {
     fn generate_move(&mut self, board: &Board) -> ActionType {
-        let move_delay = time::Duration::from_millis(self.move_delay);
-
-        match self.move_queue.pop(){
+        let start = time::Instant::now();
+        let result = match self.move_queue.pop(){
             Some(action) => action,
             None => {
-                let start = time::Instant::now();
-                self.move_queue = NaiveAI::generate_next_moves(board);
-                let now = time::Instant::now();
-                let elapsed = now - start;
-                println!("generated move in {:?}", elapsed);
-                if move_delay > elapsed{
-                    thread::sleep(move_delay - elapsed);
-                }
+                self.move_queue = self.generate_next_moves(board);
                 self.move_queue.pop().expect("something weird happened and we have no moves")
             }
+        };
+        let now = time::Instant::now();
+        let elapsed = now - start;
+        println!("generated move in {:?}", elapsed);
+        if elapsed < self.min_move_time{
+            thread::sleep(self.min_move_time - elapsed);
         }
+        result
     }
 }
 
 impl NaiveAI {
 
-    pub fn new(move_delay: u64) -> NaiveAI{
+    pub fn new(min_move_time: u64, max_move_time: u64) -> NaiveAI{
         let mut move_queue = Vec::with_capacity(4);
+        let min_move_time = time::Duration::from_millis(min_move_time);
+        let max_move_time = time::Duration::from_millis(max_move_time);
         move_queue.push(ActionType::Click(Point(0, 0)));
-        NaiveAI{move_queue, move_delay}
+        NaiveAI{move_queue, min_move_time, max_move_time}
     }
 
-    pub fn generate_next_moves(board: &Board) -> Vec<ActionType>{
-        // TODO: next up: a time budget for searching
+    pub fn generate_next_moves(&self, board: &Board) -> Vec<ActionType>{
         let safe_flags = NaiveAI::known_safe_flags(board);
         if !safe_flags.is_empty() {
             return safe_flags.iter().map(|point| ActionType::Flag(*point)).collect()
@@ -162,7 +163,7 @@ impl NaiveAI {
             return safe_clicks.iter().map(|point| ActionType::Click(*point)).collect()
         }
 
-        let probabilities = NaiveAI::get_monte_carlo_probabilities(board);
+        let probabilities = self.get_monte_carlo_probabilities(board);
         println!("probs are");
         println!("{}", board.to_string_with_probabilities(&probabilities));
         let mut actions: Vec<ActionType> = Vec::with_capacity(1);
@@ -201,12 +202,14 @@ impl NaiveAI {
     }
 
 
-    fn get_monte_carlo_probabilities(board: &Board) -> Vec<(Point, f32)>{
+    fn get_monte_carlo_probabilities(&self, board: &Board) -> Vec<(Point, f32)>{
+        let start = time::Instant::now();
+
         // TODO: ok so this isn't really naive anymore is it
         let mut counts: HashMap<Point, usize> = HashMap::new();
         let rollouts = 20;
         let border_points: Vec<Point> = board.get_border_points();
-        for _ in 0..rollouts{
+        while time::Instant::now().duration_since(start) < self.max_move_time {
             let mut solver = build_constraint_solver(board);
             let assignments = solver.backtrack().expect("failed to find a solution");
             assignments.iter().for_each(|(point, mined)| {
