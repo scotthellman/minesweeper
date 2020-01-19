@@ -11,6 +11,7 @@ use std::thread;
 use std::time;
 use std::collections::HashSet;
 use std::collections::HashMap;
+use rand::seq::SliceRandom;
 
 struct MineConstraint {
     expected_mines: i32,
@@ -181,10 +182,16 @@ impl NaiveAI {
                 actions.push(ActionType::Flag(point));
             }
         }
+        let best_point = best_point.unwrap_or_else(|| self.get_random_valid_click(board));
         if actions.is_empty() {
-            actions.push(ActionType::Flag(best_point.expect("so we just didn't have anything or something?")))
+            actions.push(ActionType::Flag(best_point))
         }
         actions
+    }
+
+    fn get_random_valid_click(&self, board: &Board) -> Point {
+        let points = board.get_unknown_points();
+        *points.choose(&mut rand::thread_rng()).expect("There are no unknown points!")
     }
 
     fn known_safe_flags(board: &Board) -> HashSet<Point> {

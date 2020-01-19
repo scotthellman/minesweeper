@@ -285,6 +285,15 @@ impl Board {
         self.initialized = true;
     }
 
+    pub fn get_unknown_points(&self) -> Vec<Point> {
+        // TODO: very similar to get_border_points
+        self.size.points().iter()
+            .map(|point| self.retrieve_cell(point))
+            .filter(|cell| cell.knowledge.is_unknown())
+            .map(|cell| cell.point)
+            .collect()
+    }
+
     pub fn get_border_points(&self) -> Vec<Point>{
         self.size.points().iter()
             .map(|point| self.retrieve_cell(point))
